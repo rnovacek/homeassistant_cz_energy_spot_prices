@@ -1,0 +1,14 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Spot prices configuration",
+                "data": {
+                    "resource": "Zdroj",
+                    "currency": "Currency",
+                    "unit_of_measurement": "Unit of energy"
+                }
+            }
+        }
+    }
+}

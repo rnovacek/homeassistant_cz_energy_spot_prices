@@ -1,0 +1,8 @@
+
+logger:
+  default: warning
+  logs:
+    custom_components.cz_energy_spot_prices: debug
+
+# Loads default set of integrations. Do not remove.
+default_config:
