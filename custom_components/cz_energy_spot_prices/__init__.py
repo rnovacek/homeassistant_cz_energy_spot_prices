@@ -3,7 +3,6 @@
 import asyncio
 import logging
 
-from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT, CONF_RESOURCE
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.typing import ConfigType

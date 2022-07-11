@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict
 
-from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT, CONF_RESOURCE
+from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     sensor = SpotRateSensor(
-        resource=entry.data[CONF_RESOURCE],
+        resource='Electricity',
         currency=entry.data[CONF_CURRENCY],
         unit=entry.data[CONF_UNIT_OF_MEASUREMENT],
     )

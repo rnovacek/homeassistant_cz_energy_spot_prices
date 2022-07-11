@@ -1,0 +1,14 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Konfigurace pro spotové ceny",
+                "data": {
+                    "currency": "Měna",
+                    "resource": "Zdroj",
+                    "unit_of_measurement": "Jednotka energie"
+                }
+            }
+        }
+    }
+}

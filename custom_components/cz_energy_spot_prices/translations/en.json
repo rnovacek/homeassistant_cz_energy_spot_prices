@@ -4,8 +4,8 @@
             "user": {
                 "title": "Spot prices configuration",
                 "data": {
-                    "resource": "Zdroj",
                     "currency": "Currency",
+                    "resource": "Resource",
                     "unit_of_measurement": "Unit of energy"
                 }
             }
