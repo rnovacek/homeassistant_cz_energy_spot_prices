@@ -23,7 +23,7 @@ The sensor also has currently valid (current day, and if it's after noon (12pm) 
 
 If you want you display a chart with current day (or two days if it's after noon), you can install [apex-card](https://github.com/RomRider/apexcharts-card) card for Home Assistant and then use following config for it:
 
-```
+```yaml
 type: custom:apexcharts-card
 header:
   show: true
