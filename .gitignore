@@ -1,7 +1,6 @@
-./run-hass.sh
-./test_hass/home-assistant.log*
-./test_hass/home-assistant_v2.db*
-./test_hass/.storage*
-./test_hass/custom_components
+test_hass/home-assistant.log*
+test_hass/home-assistant_v2.db*
+test_hass/.storage*
+test_hass/custom_components
 __pycache__
 .venv

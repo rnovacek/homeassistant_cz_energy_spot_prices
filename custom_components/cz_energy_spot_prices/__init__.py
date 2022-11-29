@@ -20,6 +20,17 @@ def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    hass.config_entries.async_setup_platforms(entry, ['sensor'])
+async def options_update_listener(hass: HomeAssistant, config_entry: ConfigEntry):
+    """Handle options update."""
+    logger.debug('options_update_listener', config_entry.data)
+    await hass.config_entries.async_reload(config_entry.entry_id)
+
+
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
+    logger.debug('async_setup_entry %s %s', config_entry.unique_id, config_entry.data)
+
+    hass.config_entries.async_setup_platforms(config_entry, ['sensor'])
+
+    unsub_options_update_listener = config_entry.add_update_listener(options_update_listener)
+
     return True

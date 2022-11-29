@@ -1,100 +1,130 @@
+import logging
 from datetime import date, datetime, timedelta, time, timezone
 from zoneinfo import ZoneInfo
-from typing import Dict, List
-from typing_extensions import TypedDict, NotRequired
+from typing import Dict, Literal
+from decimal import Decimal
 import asyncio
+import xml.etree.ElementTree as ET
 
 import aiohttp
 
-class AxisDef(TypedDict):
-    decimals: int
-    legend: str
-    short: NotRequired[bool]
-    step: int
-    tooltip: NotRequired[str]
-
-class AxisData(TypedDict):
-    x: AxisDef
-    y: AxisDef
-    y2: AxisDef
+logger = logging.getLogger(__name__)
 
 
-class DataPoint(TypedDict):
-    x: str
-    y: float
+QUERY = '''<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://www.ote-cr.cz/schema/service/public">
+    <soapenv:Header/>
+    <soapenv:Body>
+        <pub:GetDamPriceE>
+            <pub:StartDate>{start}</pub:StartDate>
+            <pub:EndDate>{end}</pub:EndDate>
+            <pub:InEur>{in_eur}</pub:InEur>
+        </pub:GetDamPriceE>
+    </soapenv:Body>
+</soapenv:Envelope>
+'''
 
-class DataLine(TypedDict):
-    bold: bool
-    colour: str
-    point: List[DataPoint]
-    title: str
-    tooltip: str
-    tooltipDecimalsY: int
-    type: str
-    useTooltip: bool
-    useY2: bool
+# Response example
+# <?xml version="1.0" ?>
+# <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+#   <SOAP-ENV:Body>
+#     <GetDamPriceEResponse xmlns="http://www.ote-cr.cz/schema/service/public">
+#       <Result>
+#         <Item>
+#           <Date>2022-11-26</Date>
+#           <Hour>1</Hour>
+#           <Price>5184.14</Price>
+#           <Volume>4021.9</Volume>
+#         </Item>
+#         <Item>
+#           <Date>2022-11-26</Date>
+#           <Hour>2</Hour>
+#           <Price>5133.71</Price>
+#           <Volume>3596.0</Volume>
+#         </Item>
+#         ...
+#       </Result>
+#     </GetDamPriceEResponse>
+#   </SOAP-ENV:Body>
+# </SOAP-ENV:Envelope>
 
 
-class ChartDatapoints(TypedDict):
-    dataLine: List[DataLine]
-
-class ChartGraph(TypedDict):
-    fullscreen: bool
-    title: str
-    zoom: bool
+class OTEFault(Exception):
+    pass
 
 
-class ChartData(TypedDict):
-    axis: AxisData
-    data: ChartDatapoints
-    graph: ChartGraph
+class InvalidFormat(OTEFault):
+    pass
 
 
 class SpotRate:
-    ELECTRICITY_PRICE_URL = 'https://www.ote-cr.cz/en/short-term-markets/electricity/day-ahead-market/@@chart-data'
-    CURRENCY = 'EUR'
+    ELECTRICITY_PRICE_URL = 'https://www.ote-cr.cz/services/PublicDataService'
     UNIT = 'MWh'
+
+    RateByDatetime = Dict[datetime, Decimal]
+    EnergyUnit = Literal['kWh', 'MWh']
 
     def __init__(self):
         self.timezone = ZoneInfo('Europe/Prague')
         self.utc = ZoneInfo('UTC')
 
-    async def get_two_days_rates(self, start: datetime) -> Dict[str, float]:
+    def get_query(self, start: date, end: date, in_eur: bool) -> str:
+        return QUERY.format(start=start.isoformat(), end=end.isoformat(), in_eur='true' if in_eur else 'false')
+
+    async def get_two_days_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
         assert start.tzinfo, 'Timezone must be set'
         start_tz = start.astimezone(self.timezone)
         first_day = start_tz.date()
-        day1_rates, day2_rates = await asyncio.gather(
-            self.get_day_rates(day=first_day),
-            self.get_day_rates(day=first_day + timedelta(days=1))
-        )
-        day1_rates.update(day2_rates)
-        return day1_rates
+        query = self.get_query(first_day, first_day + timedelta(days=1), in_eur=in_eur)
 
-    async def get_day_rates(self, day: date) -> Dict[str, float]:
-        chart_data = await self.get_day_chart_data(day)
-        rate_by_dt: Dict[str, float] = {}
+        return await self._get_rates(query, unit)
 
-        start_of_day = datetime.combine(day, time(0), tzinfo=self.timezone)
-        for line in chart_data['data']['dataLine']:
-            if line['tooltip'] == 'Price':
-                for point in line['point']:
-                    hour = int(point['x']) - 1
-                    dt = start_of_day + timedelta(hours=hour)
-                    rate_by_dt[dt.astimezone(self.utc).isoformat()] = float(point['y'])
-
-        return rate_by_dt
-
-    async def get_day_chart_data(self, day: date) -> ChartData:
-        params = {
-            'report_date': day.isoformat(),
-        }
-
+    async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh']) -> RateByDatetime:
         async with aiohttp.ClientSession() as session:
-            async with session.get(self.ELECTRICITY_PRICE_URL, params=params) as response:
-                return await response.json()
+            async with session.post(self.ELECTRICITY_PRICE_URL, data=query) as response:
+                text = await response.text()
+                root = ET.fromstring(text)
+
+        fault = root.find('.//{http://schemas.xmlsoap.org/soap/envelope/}Fault')
+        if fault:
+            faultstring = fault.find('faultstring')
+            error = 'Unknown error'
+            if faultstring is not None:
+                error = faultstring.text
+            else:
+                error = text
+            raise OTEFault(error)
+
+        result: SpotRate.RateByDatetime = {}
+        for item in root.findall('.//{http://www.ote-cr.cz/schema/service/public}Item'):
+            date_el = item.find('{http://www.ote-cr.cz/schema/service/public}Date')
+            if date_el is None or date_el.text is None:
+                raise InvalidFormat('Item has no "Date" child or is empty')
+            current_date = date.fromisoformat(date_el.text)
+
+            hour_el = item.find('{http://www.ote-cr.cz/schema/service/public}Hour')
+            if hour_el is None or hour_el.text is None:
+                raise InvalidFormat('Item has no "Hour" child or is empty')
+            current_hour = int(hour_el.text) - 1  # Minus 1 because OTE reports nth hour (starting with 1st) - "1" for 0:00 - 1:00
+
+            price_el = item.find('{http://www.ote-cr.cz/schema/service/public}Price')
+            if price_el is None or price_el.text is None:
+                raise InvalidFormat('Item has no "Price" child or is empty')
+            current_price = Decimal(price_el.text)
+            if unit == 'kWh':
+                # API returns price for MWh, we need to covert to kWh
+                current_price /= Decimal(1000)
+            elif unit != 'MWh':
+                raise ValueError(f'Invalid unit {unit}')
+
+            start_of_day = datetime.combine(current_date, time(0), tzinfo=self.timezone)
+            dt = start_of_day + timedelta(hours=current_hour)
+            result[dt.astimezone(self.utc)] = current_price
+
+        return result
 
 
 if __name__ == '__main__':
     spot_rate = SpotRate()
     import json
-    print(json.dumps(asyncio.run(spot_rate.get_two_days_rates(datetime.now(timezone.utc))), indent=4))
+    print(json.dumps(asyncio.run(spot_rate.get_two_days_rates(datetime.now(timezone.utc), in_eur=False, unit='kWh')), indent=4))

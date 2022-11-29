@@ -10,5 +10,16 @@
                 }
             }
         }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "additional_costs_buy": "Dodatečné náklady na nákup energie",
+                    "additional_costs_sell": "Dodatečné náklady na prodej energie",
+                    "cheapest_consecutive_hours_buy": "Hodiny nejlevnějšího souvislého intervalu pro nákup"
+                }
+            }
+        }
     }
 }
