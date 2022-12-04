@@ -85,9 +85,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         settings=settings,
         coordinator=coordinator,
     )
-    energy_price_buy_sensor = EnergyPriceBuy()
-    energy_price_sell_sensor = EnergyPriceSell()
-    consecutive_cheapest_sensor = ConsecutiveCheapestSensor()
+    #energy_price_buy_sensor = EnergyPriceBuy()
+    #energy_price_sell_sensor = EnergyPriceSell()
+    #consecutive_cheapest_sensor = ConsecutiveCheapestSensor()
 
     async_add_entities([
         rate_sensor,
@@ -96,9 +96,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         most_expensive_today_sensor,
         most_expensive_tomorrow_sensor,
         energy_hour_order,
-        energy_price_buy_sensor,
-        energy_price_sell_sensor,
-        consecutive_cheapest_sensor,
+        #energy_price_buy_sensor,
+        #energy_price_sell_sensor,
+        #consecutive_cheapest_sensor,
     ])
 
     await coordinator.async_config_entry_first_refresh()
@@ -231,11 +231,17 @@ class HourFindSensor(PriceSensor):
         )
 
         if found_dt is None or found_value is None:
-            logger.error('No value found for %s', self.name)
+            logger.info('No value found for %s', self.name)
             return
 
         self._available = True
-        logger.debug('%s updated to %.2f at %s', self.unique_id, found_value, found_dt.isoformat())
+        if self._value is None:
+            logger.debug('%s initialized with %.2f at %s', self.unique_id, found_value, found_dt.isoformat())
+        elif found_value != self._value:
+            logger.debug('%s updated from %.2f to %.2f at %s', self.unique_id, self._value, found_value, found_dt.isoformat())
+        else:
+            logger.debug('%s unchanged with %.2f at %s', self.unique_id, found_value, found_dt.isoformat())
+
         self._value = found_value
         self._attr = {
             'at': found_dt.isoformat(),

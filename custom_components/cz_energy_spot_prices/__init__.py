@@ -13,8 +13,7 @@ from .const import DOMAIN
 logger = logging.getLogger(__name__)
 
 
-@asyncio.coroutine
-def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Setup our skeleton component."""
     hass.data[DOMAIN] = {}
     return True
