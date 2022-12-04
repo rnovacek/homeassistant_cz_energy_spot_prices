@@ -1,34 +1,15 @@
 from zoneinfo import ZoneInfo
 from datetime import timezone, datetime
 from typing import Coroutine
-from dataclasses import dataclass
 from pathlib import Path
 from decimal import Decimal
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from custom_components.cz_energy_spot_prices.sensor import SpotRateSensor, EnergyHourOrder, Settings, SpotRate, SpotRateCoordinator
+from custom_components.cz_energy_spot_prices.sensor import SpotRateSensor, CurrentEnergyHourOrder, Settings, SpotRate, SpotRateCoordinator
 from custom_components.cz_energy_spot_prices.spot_rate import SpotRate
 from homeassistant.core import HomeAssistant
-
-
-class FakeLoop:
-    def call_later(self, *args, **kwargs):
-        pass
-
-
-@dataclass
-class Config:
-    time_zone: str
-
-
-class FakeHomeAssistant:
-    def __init__(self, time_zone):
-        self.is_stopping = False
-        self.loop = FakeLoop()
-        self.config = Config(time_zone)
-        self.data = {}
 
 
 @pytest.mark.parametrize('currency,unit', (
@@ -315,6 +296,9 @@ class TestSensors:
         monkeypatch.setattr('aiohttp.ClientSession.post', session_mock)
         await self.coordinator.async_refresh()
 
+    def _convert_unit(self, value: Decimal, unit: SpotRate.EnergyUnit) -> Decimal:
+        return value * (Decimal('0.001') if unit == 'kWh' else Decimal(1))
+
     async def test_spot_rate(self, hass: Coroutine[None, None, HomeAssistant], monkeypatch: pytest.MonkeyPatch, currency, unit):
         self._setup(await hass, currency, unit)
 
@@ -335,9 +319,8 @@ class TestSensors:
         await self._refresh(monkeypatch)
 
         assert rate_sensor.available is True
-        coef = Decimal('0.001') if unit == 'kWh' else Decimal(1)
-        assert rate_sensor.state == (Decimal('6362.85') if currency == 'CZK' else Decimal('261.04')) * coef
-        assert rate_sensor.extra_state_attributes == {k: float(v[currency] * coef) for k, v in self.TIME_ATTRIBUTES.items()}
+        assert rate_sensor.state == self._convert_unit(Decimal('6362.85') if currency == 'CZK' else Decimal('261.04'), unit)
+        assert rate_sensor.extra_state_attributes == {k: float(self._convert_unit(v[currency], unit)) for k, v in self.TIME_ATTRIBUTES.items()}
 
         # 1am == 2nd hour of the day
         now = datetime(2022, 12, 3, 1, tzinfo=ZoneInfo('Europe/Prague'))
@@ -345,13 +328,13 @@ class TestSensors:
         await self._refresh(monkeypatch)
 
         assert rate_sensor.available is True
-        assert rate_sensor.state == (Decimal('5967.49') if currency == 'CZK' else Decimal('244.82')) * coef
-        assert rate_sensor.extra_state_attributes == {k: float(v[currency] * coef) for k, v in self.TIME_ATTRIBUTES.items()}
+        assert rate_sensor.state == self._convert_unit(Decimal('5967.49') if currency == 'CZK' else Decimal('244.82'), unit)
+        assert rate_sensor.extra_state_attributes == {k: float(self._convert_unit(v[currency], unit)) for k, v in self.TIME_ATTRIBUTES.items()}
 
     async def test_hour_order(self, hass: Coroutine[None, None, HomeAssistant], monkeypatch: pytest.MonkeyPatch, currency, unit):
         self._setup(await hass, currency, unit)
 
-        hour_order = EnergyHourOrder(
+        hour_order = CurrentEnergyHourOrder(
             hass=self.hass,
             settings=self.settings,
             coordinator=self.coordinator,
@@ -369,7 +352,11 @@ class TestSensors:
 
         assert hour_order.available is True
         assert hour_order.state == 8
-        assert hour_order.extra_state_attributes == {k: v['order'] for k, v in self.TIME_ATTRIBUTES.items() if v['order'] > 0}
+        assert hour_order.extra_state_attributes == {
+            k: [v['order'], float(self._convert_unit(v[currency], unit))]
+            for k, v in self.TIME_ATTRIBUTES.items()
+            if v['order'] > 0
+        }
 
         # 1am == 2nd hour of the day
         now = datetime(2022, 12, 3, 1, tzinfo=ZoneInfo('Europe/Prague'))
@@ -378,4 +365,8 @@ class TestSensors:
 
         assert hour_order.available is True
         assert hour_order.state == 5
-        assert hour_order.extra_state_attributes == {k: v['order'] for k, v in self.TIME_ATTRIBUTES.items() if v['order'] > 0}
+        assert hour_order.extra_state_attributes == {
+            k: [v['order'], float(self._convert_unit(v[currency], unit))]
+            for k, v in self.TIME_ATTRIBUTES.items()
+            if v['order'] > 0
+        }

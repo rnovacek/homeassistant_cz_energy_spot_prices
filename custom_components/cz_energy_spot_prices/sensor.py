@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, cast, Tuple, Optional, List
+from datetime import datetime, timezone, timedelta, date
+from typing import Dict, Tuple, Optional, List
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 from dataclasses import dataclass
@@ -80,7 +80,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         settings=settings,
         coordinator=coordinator,
     )
-    energy_hour_order = EnergyHourOrder(
+    current_energy_hour_order = CurrentEnergyHourOrder(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+    )
+    tomorrow_energy_hour_order = TomorrowEnergyHourOrder(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
@@ -95,7 +100,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         cheapest_tomorrow_sensor,
         most_expensive_today_sensor,
         most_expensive_tomorrow_sensor,
-        energy_hour_order,
+        current_energy_hour_order,
+        tomorrow_energy_hour_order,
         #energy_price_buy_sensor,
         #energy_price_sell_sensor,
         #consecutive_cheapest_sensor,
@@ -322,15 +328,6 @@ class MostExpensiveTomorrowSensor(HourFindSensor):
 
 class EnergyHourOrder(SpotRateSensorBase):
     @property
-    def unique_id(self) -> str:
-        return f'sensor.current_spot_{self._settings.resource.lower()}_hour_order'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Current Spot {self._settings.resource} Hour Order'
-
-    @property
     def icon(self) -> str:
         return 'mdi:hours-24'
 
@@ -343,16 +340,15 @@ class EnergyHourOrder(SpotRateSensorBase):
         return None
 
     def update(self, rates_by_datetime: SpotRate.RateByDatetime):
-        now = self.get_now(self._settings.zoneinfo)
-        now_hour = now.replace(minute=0, second=0, microsecond=0)
-        today = now.date()
+        self.now = self.get_now(self._settings.zoneinfo)
+        self.today = self.now.date()
 
         rates: List[dict] = []
         for dt_utc, rate in rates_by_datetime.items():
             dt_local = dt_utc.astimezone(self._settings.zoneinfo)
 
-            if dt_local.date() != today:
-                # Ignore tomorrow (at least for now)
+            # Skip today or tomorrow based on which sensor
+            if not self._should_include(dt_local):
                 continue
 
             rates.append({
@@ -360,16 +356,42 @@ class EnergyHourOrder(SpotRateSensorBase):
                 'rate': rate,
             })
 
-        attributes = {}
         current_order = None
 
         sorted_prices = sorted(rates, key=lambda item: item['rate'])
         for order, d in enumerate(sorted_prices, 1):
             d['order'] = order
 
+        attributes = {}
         for d in rates:
-            attributes[d['dt_local'].isoformat()] = d['order']
+            attributes[d['dt_local'].isoformat()] = [d['order'], float(d['rate'])]
 
+        self._publish(rates, attributes)
+
+    def _should_include(self, dt: datetime, today: date) -> bool:
+        raise NotImplementedError()
+
+    def _publish(self, rates: List[dict], attributes: dict):
+        raise NotImplementedError()
+
+class CurrentEnergyHourOrder(EnergyHourOrder):
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.current_spot_{self._settings.resource.lower()}_hour_order'
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return f'Current Spot {self._settings.resource} Hour Order'
+
+    def _should_include(self, dt):
+        return dt.date() == self.today
+
+    def _publish(self, rates, attributes):
+        now_hour = self.now.replace(minute=0, second=0, microsecond=0)
+
+        current_order = None
+        for d in rates:
             if d['dt_local'] == now_hour:
                 current_order = d['order']
 
@@ -380,6 +402,25 @@ class EnergyHourOrder(SpotRateSensorBase):
         self._available = True
         logger.debug('%s updated to %d', self.unique_id, current_order)
         self._value = current_order
+        self._attr = attributes
+
+
+class TomorrowEnergyHourOrder(EnergyHourOrder):
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.tomorrow_spot_{self._settings.resource.lower()}_hour_order'
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return f'Tomorrow Spot {self._settings.resource} Hour Order'
+
+    def _should_include(self, dt):
+        return dt.date() != self.today
+
+    def _publish(self, rates, attributes):
+        self._available = True
+        self._value = None
         self._attr = attributes
 
 
