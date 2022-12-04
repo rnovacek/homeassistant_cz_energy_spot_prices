@@ -109,12 +109,15 @@ class SpotRateSensorBase(CoordinatorEntity, SensorEntity):
 
     def __init__(self, hass: HomeAssistant, settings: Settings, coordinator: SpotRateCoordinator):
         super().__init__(coordinator)
-        self._hass = hass
+        self.hass = hass
         self._settings = settings
 
         self._value = None
         self._attr = None
         self._available = False
+
+    def get_now(self, zoneinfo: timezone | ZoneInfo = timezone.utc):
+        return datetime.now(zoneinfo)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -166,7 +169,7 @@ class SpotRateSensor(PriceSensor):
         return f'Current Spot {self._settings.resource} Price'
 
     def update(self, rates_by_datetime: SpotRate.RateByDatetime):
-        now = datetime.now(timezone.utc)
+        now = self.get_now()
         now_hour = now.replace(minute=0, second=0, microsecond=0)
 
         attributes: Dict[str, float] = {}
@@ -221,7 +224,7 @@ class HourFindSensor(PriceSensor):
         return found_dt, found_value
 
     def update(self, rates_by_datetime: SpotRate.RateByDatetime):
-        self.now = datetime.now(self._settings.zoneinfo)
+        self.now = self.get_now(self._settings.zoneinfo)
         self.today = self.now.date()
         self.tomorrow = self.today + timedelta(days=1)
 
@@ -340,7 +343,7 @@ class EnergyHourOrder(SpotRateSensorBase):
         return None
 
     def update(self, rates_by_datetime: SpotRate.RateByDatetime):
-        now = datetime.now(self._settings.zoneinfo)
+        now = self.get_now(self._settings.zoneinfo)
         now_hour = now.replace(minute=0, second=0, microsecond=0)
         today = now.date()
 
