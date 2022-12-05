@@ -1,16 +1,15 @@
 from __future__ import annotations
 import logging
-from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Tuple, Optional, List
+from datetime import datetime, timezone, timedelta
+from typing import Dict, Tuple, Optional, List, Union
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 from dataclasses import dataclass
 
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.core import HomeAssistant, Event, State, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .spot_rate import SpotRate
@@ -122,7 +121,7 @@ class SpotRateSensorBase(CoordinatorEntity, SensorEntity):
         self._attr = None
         self._available = False
 
-    def get_now(self, zoneinfo: timezone | ZoneInfo = timezone.utc):
+    def get_now(self, zoneinfo: Union[timezone, ZoneInfo] = timezone.utc):
         return datetime.now(zoneinfo)
 
     @callback
@@ -156,11 +155,11 @@ class PriceSensor(SpotRateSensorBase):
         return 'mdi:cash'
 
     @property
-    def native_unit_of_measurement(self) -> str | None:
+    def native_unit_of_measurement(self) -> Optional[str]:
         return f'{self._settings.currency_human}/{self._settings.unit}'
 
     @property
-    def device_class(self) -> str | None:
+    def device_class(self) -> Optional[str]:
         return 'monetary'
 
 
@@ -332,11 +331,11 @@ class EnergyHourOrder(SpotRateSensorBase):
         return 'mdi:hours-24'
 
     @property
-    def native_unit_of_measurement(self) -> str | None:
+    def native_unit_of_measurement(self) -> Optional[str]:
         return None
 
     @property
-    def device_class(self) -> str | None:
+    def device_class(self) -> Optional[str]:
         return None
 
     def update(self, rates_by_datetime: SpotRate.RateByDatetime):
@@ -356,8 +355,6 @@ class EnergyHourOrder(SpotRateSensorBase):
                 'rate': rate,
             })
 
-        current_order = None
-
         sorted_prices = sorted(rates, key=lambda item: item['rate'])
         for order, d in enumerate(sorted_prices, 1):
             d['order'] = order
@@ -368,7 +365,7 @@ class EnergyHourOrder(SpotRateSensorBase):
 
         self._publish(rates, attributes)
 
-    def _should_include(self, dt: datetime, today: date) -> bool:
+    def _should_include(self, dt: datetime) -> bool:
         raise NotImplementedError()
 
     def _publish(self, rates: List[dict], attributes: dict):
