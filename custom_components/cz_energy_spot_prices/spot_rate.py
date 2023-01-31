@@ -1,3 +1,4 @@
+import sys
 import logging
 from datetime import date, datetime, timedelta, time, timezone
 from zoneinfo import ZoneInfo
@@ -71,19 +72,23 @@ class SpotRate:
     def get_query(self, start: date, end: date, in_eur: bool) -> str:
         return QUERY.format(start=start.isoformat(), end=end.isoformat(), in_eur='true' if in_eur else 'false')
 
-    async def get_two_days_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
+    async def get_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
         assert start.tzinfo, 'Timezone must be set'
         start_tz = start.astimezone(self.timezone)
         first_day = start_tz.date()
-        query = self.get_query(first_day, first_day + timedelta(days=1), in_eur=in_eur)
+        # From yesterday (as we need it for longest consecutive) till tomorrow (we won't have more data anyway)
+        query = self.get_query(first_day - timedelta(days=1), first_day + timedelta(days=1), in_eur=in_eur)
 
         return await self._get_rates(query, unit)
 
-    async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh']) -> RateByDatetime:
+    async def _download(self, query: str) -> str:
         async with aiohttp.ClientSession() as session:
             async with session.post(self.ELECTRICITY_PRICE_URL, data=query) as response:
-                text = await response.text()
-                root = ET.fromstring(text)
+                return await response.text()
+
+    async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh']) -> RateByDatetime:
+        text = await self._download(query)
+        root = ET.fromstring(text)
 
         fault = root.find('.//{http://schemas.xmlsoap.org/soap/envelope/}Fault')
         if fault:
@@ -126,5 +131,12 @@ class SpotRate:
 
 if __name__ == '__main__':
     spot_rate = SpotRate()
-    import json
-    print(json.dumps(asyncio.run(spot_rate.get_two_days_rates(datetime.now(timezone.utc), in_eur=False, unit='kWh')), indent=4))
+    if len(sys.argv) >= 2:
+        dt = date.fromisoformat(sys.argv[1])
+    else:
+        dt = date.today()
+
+    in_eur = True
+
+    query = spot_rate.get_query(dt - timedelta(days=1), dt + timedelta(days=1), in_eur=in_eur)
+    print(asyncio.run(spot_rate._download(query)))

@@ -6,3 +6,6 @@ logger:
 
 # Loads default set of integrations. Do not remove.
 default_config:
+
+http:
+  server_port: 9123

@@ -7,8 +7,12 @@ from decimal import Decimal
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from custom_components.cz_energy_spot_prices.sensor import SpotRateSensor, CurrentEnergyHourOrder, Settings, SpotRate, SpotRateCoordinator
+from custom_components.cz_energy_spot_prices.sensor import (
+    SpotRateSensor, CurrentEnergyHourOrder, Settings, SpotRate, SpotRateCoordinator,
+    ConsecutiveCheapestSensor,
+)
 from custom_components.cz_energy_spot_prices.spot_rate import SpotRate
+from custom_components.cz_energy_spot_prices.coordinator import SpotRateData
 from homeassistant.core import HomeAssistant
 
 
@@ -262,6 +266,7 @@ class TestSensors:
             'order': 0,
         },
     }
+
     def _setup(self, hass: HomeAssistant, currency: str, unit: SpotRate.EnergyUnit):
         self.timezone = 'Europe/Prague'
         self.hass = hass
@@ -315,7 +320,7 @@ class TestSensors:
 
         # Midnight == 1st hour of the day
         now = datetime(2022, 12, 3, 0, tzinfo=ZoneInfo('Europe/Prague'))
-        rate_sensor.get_now = lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo)
+        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert rate_sensor.available is True
@@ -324,7 +329,7 @@ class TestSensors:
 
         # 1am == 2nd hour of the day
         now = datetime(2022, 12, 3, 1, tzinfo=ZoneInfo('Europe/Prague'))
-        rate_sensor.get_now = lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo)
+        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert rate_sensor.available is True
@@ -347,26 +352,40 @@ class TestSensors:
 
         # Midnight == 1st hour of the day
         now = datetime(2022, 12, 3, 0, tzinfo=ZoneInfo('Europe/Prague'))
-        hour_order.get_now = lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo)
+        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert hour_order.available is True
         assert hour_order.state == 8
         assert hour_order.extra_state_attributes == {
-            k: [v['order'], float(self._convert_unit(v[currency], unit))]
+            k: [v['order'], round(float(self._convert_unit(v[currency], unit)), 3)]
             for k, v in self.TIME_ATTRIBUTES.items()
             if v['order'] > 0
         }
 
         # 1am == 2nd hour of the day
         now = datetime(2022, 12, 3, 1, tzinfo=ZoneInfo('Europe/Prague'))
-        hour_order.get_now = lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo)
+        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert hour_order.available is True
         assert hour_order.state == 5
         assert hour_order.extra_state_attributes == {
-            k: [v['order'], float(self._convert_unit(v[currency], unit))]
+            k: [v['order'], round(float(self._convert_unit(v[currency], unit)), 3)]
             for k, v in self.TIME_ATTRIBUTES.items()
             if v['order'] > 0
         }
+
+    async def test_consecutive(self, hass: Coroutine[None, None, HomeAssistant], monkeypatch: pytest.MonkeyPatch, currency, unit):
+        self._setup(await hass, currency, unit)
+        consecutive = ConsecutiveCheapestSensor(2, hass=self.hass, settings=self.settings, coordinator=self.coordinator)
+        consecutive.entity_id = consecutive.unique_id
+        await consecutive.async_added_to_hass()
+        assert consecutive.available is False
+        assert consecutive.state is None
+        assert consecutive.extra_state_attributes is None
+
+        now = datetime(2022, 12, 3, 0, tzinfo=ZoneInfo('Europe/Prague'))
+        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        await self._refresh(monkeypatch)
+

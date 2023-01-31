@@ -22,12 +22,6 @@ CURRENCIES = {
     'EUR': 'EUR',
 }
 
-OPTIONS_SCHEMA = vol.Schema({
-    vol.Optional(ADDITIONAL_COSTS_BUY, description='Additional costs when buying', default='0.0'): TemplateSelector(),
-    vol.Optional(CHEAPEST_CONSECUTIVE_HOURS_BUY, description='Hours of cheapest consecutive prices for buying', default=''): str,
-    vol.Optional(ADDITIONAL_COSTS_SELL, description='Additional costs when selling', default='0.0'): TemplateSelector(),
-})
-
 DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_CURRENCY, description='Currency', default='CZK'): vol.In(CURRENCIES),
     vol.Required(CONF_UNIT_OF_MEASUREMENT, description='Energy unit', default='kWh'): vol.In(UNITS),
@@ -77,9 +71,26 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             self.hass.config_entries.async_update_entry(
                 self.config_entry, data=user_input, options=self.config_entry.options
             )
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="Config", data=user_input)
 
+        options_schema = vol.Schema({
+            vol.Optional(
+                ADDITIONAL_COSTS_BUY,
+                description='Additional costs when buying',
+                default=self.config_entry.data.get(ADDITIONAL_COSTS_BUY, ''),
+            ): TemplateSelector(),
+            vol.Optional(
+                CHEAPEST_CONSECUTIVE_HOURS_BUY,
+                description='Hours of cheapest consecutive prices for buying',
+                default=self.config_entry.data.get(CHEAPEST_CONSECUTIVE_HOURS_BUY, ''),
+            ): str,
+            vol.Optional(
+                ADDITIONAL_COSTS_SELL,
+                description='Additional costs when selling',
+                default=self.config_entry.data.get(ADDITIONAL_COSTS_SELL, ''),
+            ): TemplateSelector(),
+        })
         return self.async_show_form(
             step_id="init",
-            data_schema=OPTIONS_SCHEMA,
+            data_schema=options_schema,
         )
