@@ -13,11 +13,48 @@ You can select an energy unit between kWh and MWh when configuring the integrati
 5. Configure Currency and Unit of energy
 6. Submit
 
-## Usage
+## Sensors
 
-You can use created sensor (usually called `sensor.current_spot_electricity_price`) to get current hourly price in selected unit and currency.
+| Sensor | value | attributes |
+| ------ | ----- | ---------- |
+| **Current Spot Electricity Price** | electricity price for current hour | dictionary with timestamps as keys and spot price for given hour as values |
+| **Spot Cheapest Electricity Today** | price of the cheapest electricity today | [At](#at)<br>[Hour](#hour) |
+| **Spot Most Expensive Electricity Today** | price of the most expensive electricity today | [At](#at)<br>[Hour](#hour) |
+| **Spot Cheapest Electricity Tomorrow** | price of the cheapest electricity today | [At](#at)<br>[Hour](#hour) |
+| **Spot Most Expensive Electricity Tomorrow** | price of the most expensive electricity tomorrow | [At](#at)<br>[Hour](#hour) |
+| **Current Spot Electricity Hour Order** | order of current hour when we sort hours by it's price (1=cheapest, 24=most expensive) | dictionary with timestamps as keys and `order, price` as values |
+| **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `order, price` as values |
+| **Spot Electricity Has Tomorrow Data** | `On` when data for tomorrow are loaded, `Off` otherwise | |
+| **Spot Electricity Is Cheapest** | `On` when current hour has the cheapest price, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour) |
+| **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current hour is in a block of cheapest consecutive hours, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour) |
 
-The sensor also has currently valid (current day, and if it's after noon (12pm) then also next day) spot prices as attributes on the sensor.
+
+## Common attributes
+
+### At
+
+timestamp when the cheapest hour starts
+
+### Hour
+
+hour with the cheapest electricity (`2` means that cheapest electricity is from `2:00` till `3:00` in timezone you've configured in Home Assistant)
+
+### Start
+
+timestamp when consecutive block of cheapest hours starts, only when it's in the future
+
+### Start hour
+
+hour when consecutive block of cheapest hours starts, only when it's in the future
+
+### End
+
+timestamp when consecutive block of cheapest hours ends, only when it's in the future
+
+### End hour
+
+hour when consecutive block of cheapest hours ends, only when it's in the future
+
 
 ## Displaying a chart
 
