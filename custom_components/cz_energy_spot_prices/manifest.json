@@ -1,7 +1,9 @@
 {
     "domain": "cz_energy_spot_prices",
     "name": "Czech Energy Spot Prices",
+    "integration_type": "service",
     "documentation": "https://github.com/rnovacek/homeassistant_cz_energy_spot_prices",
+    "issue_tracker": "https://github.com/rnovacek/homeassistant_cz_energy_spot_prices/issues",
     "dependencies": [],
     "codeowners": ["@rnovacek"],
     "requirements": [],
