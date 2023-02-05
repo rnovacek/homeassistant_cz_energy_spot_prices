@@ -28,7 +28,9 @@ async def options_update_listener(hass: HomeAssistant, config_entry: ConfigEntry
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     logger.debug('async_setup_entry %s %s', config_entry.unique_id, config_entry.data)
 
-    hass.config_entries.async_setup_platforms(config_entry, ['sensor'])
+    hass.async_create_task(
+        hass.config_entries.async_forward_entry_setup(config_entry, 'sensor')
+    )
 
     unsub_options_update_listener = config_entry.add_update_listener(options_update_listener)
 
