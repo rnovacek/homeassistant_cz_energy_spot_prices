@@ -25,8 +25,8 @@ You can select an energy unit between kWh and MWh when configuring the integrati
 | **Current Spot Electricity Hour Order** | order of current hour when we sort hours by it's price (1=cheapest, 24=most expensive) | dictionary with timestamps as keys and `order, price` as values |
 | **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `order, price` as values |
 | **Spot Electricity Has Tomorrow Data** | `On` when data for tomorrow are loaded, `Off` otherwise | |
-| **Spot Electricity Is Cheapest** | `On` when current hour has the cheapest price, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour) |
-| **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current hour is in a block of cheapest consecutive hours, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour) |
+| **Spot Electricity Is Cheapest** | `On` when current hour has the cheapest price, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
+| **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current hour is in a block of cheapest consecutive hours, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
 
 
 ## Common attributes
@@ -41,19 +41,31 @@ hour with the cheapest electricity (`2` means that cheapest electricity is from 
 
 ### Start
 
-timestamp when consecutive block of cheapest hours starts, only when it's in the future
+timestamp when consecutive block of cheapest hours starts, only available when the block is in the future
 
 ### Start hour
 
-hour when consecutive block of cheapest hours starts, only when it's in the future
+hour when consecutive block of cheapest hours starts, only available when the block is in the future
 
 ### End
 
-timestamp when consecutive block of cheapest hours ends, only when it's in the future
+timestamp when consecutive block of cheapest hours ends, only available when the block is in the future
 
 ### End hour
 
-hour when consecutive block of cheapest hours ends, only when it's in the future
+hour when consecutive block of cheapest hours ends, only available when the block is in the future
+
+### Min
+
+minimal price in the block, only available when the block is in the future
+
+### Max
+
+maximal price in the block, only available when the block is in the future
+
+### Mean
+
+average (mean) price in the block, only available when the block is in the future
 
 
 ## Displaying a chart

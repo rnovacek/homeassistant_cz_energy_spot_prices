@@ -58,9 +58,6 @@ class SpotRateDay:
 
         return most_expensive_hour
 
-    def cheapest_consecutive_hours(self, n: int) -> Sequence[SpotRateHour]:
-        pass
-
 
 class SpotRateData:
     def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo) -> None:

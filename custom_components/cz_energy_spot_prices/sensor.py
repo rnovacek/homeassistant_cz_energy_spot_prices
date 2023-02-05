@@ -1,7 +1,8 @@
 from __future__ import annotations
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Optional, Union
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass
 
@@ -435,6 +436,34 @@ class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
         else:
             return f'Spot {self._settings.resource} Is Cheapest {self.hours} Hours Block'
 
+    def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
+        dt = start
+        min_price: Optional[Decimal] = None
+        max_price: Optional[Decimal] = None
+        sum_price: Decimal = Decimal(0)
+        count: int = 0
+
+        while dt <= end:
+            hour = rate_data.hour_for_dt(dt)
+            sum_price += hour.price
+            count += 1
+            if min_price is None or hour.price < min_price:
+                min_price = hour.price
+
+            if max_price is None or hour.price > max_price:
+                max_price = hour.price
+
+            dt += timedelta(hours=1)
+        return {
+            'Start': start,
+            'Start hour': start.hour,
+            'End': end,
+            'End hour': end.hour,
+            'Min': float(min_price or 0),
+            'Max': float(max_price or 0),
+            'Mean': float(sum_price / count) if count > 0 else 0,
+        }
+
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
         self._attr_is_on = None
@@ -455,12 +484,8 @@ class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
                 if hour.cheapest_consecutive_order[self.hours] == 1:
                     if not self._attr:
                         # Only put it there once, so to contains closes interval in the future
-                        self._attr = {
-                            'Start': start,
-                            'Start hour': start.hour,
-                            'End': end,
-                            'End hour': end.hour,
-                        }
+                        self._attr = self._compute_attr(rate_data, start, end)
+
                     if start <= rate_data.now <= end:
                         is_on = True
 
