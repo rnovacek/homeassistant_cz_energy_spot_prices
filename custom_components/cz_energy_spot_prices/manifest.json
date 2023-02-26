@@ -1,13 +1,14 @@
 {
     "domain": "cz_energy_spot_prices",
     "name": "Czech Energy Spot Prices",
-    "integration_type": "service",
-    "documentation": "https://github.com/rnovacek/homeassistant_cz_energy_spot_prices",
-    "issue_tracker": "https://github.com/rnovacek/homeassistant_cz_energy_spot_prices/issues",
-    "dependencies": [],
+    "after_dependencies": ["http"],
     "codeowners": ["@rnovacek"],
-    "requirements": [],
+    "config_flow": true,
+    "dependencies": [],
+    "documentation": "https://github.com/rnovacek/homeassistant_cz_energy_spot_prices",
+    "integration_type": "service",
     "iot_class": "cloud_polling",
-    "version": "0.3.0",
-    "config_flow": true
+    "issue_tracker": "https://github.com/rnovacek/homeassistant_cz_energy_spot_prices/issues",
+    "requirements": [],
+    "version": "0.3.0"
 }
