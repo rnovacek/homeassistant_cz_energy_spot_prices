@@ -7,7 +7,7 @@ from homeassistant.core import callback
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.helpers.selector import TemplateSelector
 
-from .const import DOMAIN, ADDITIONAL_COSTS_BUY, ADDITIONAL_COSTS_SELL, CHEAPEST_CONSECUTIVE_HOURS_BUY
+from .const import DOMAIN, ADDITIONAL_COSTS_BUY, ADDITIONAL_COSTS_SELL, CHEAPEST_CONSECUTIVE_HOURS_BUY, CHEAPEST_HOUR_FROM_PERIOD_BUY
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 CHEAPEST_CONSECUTIVE_HOURS_BUY,
                 description='Hours of cheapest consecutive prices for buying',
                 default=self.config_entry.data.get(CHEAPEST_CONSECUTIVE_HOURS_BUY, ''),
+            ): str,
+            vol.Optional(
+                CHEAPEST_HOUR_FROM_PERIOD_BUY,
+                description='Cheapest hour from larger period for buying',
+                default=self.config_entry.data.get(CHEAPEST_HOUR_FROM_PERIOD_BUY, ''),
             ): str,
             vol.Optional(
                 ADDITIONAL_COSTS_SELL,

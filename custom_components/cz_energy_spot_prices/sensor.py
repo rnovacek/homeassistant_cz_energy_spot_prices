@@ -14,7 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .spot_rate import SpotRate
-from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS
+from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS, CHEAPEST_HOUR_FROM_PERIOD
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         sensors.append(
             ConsecutiveCheapestSensor(
                 hours=i,
+                hass=hass,
+                settings=settings,
+                coordinator=coordinator,
+            )
+        )
+
+    for i in CHEAPEST_HOUR_FROM_PERIOD:
+        sensors.append(
+            CheapestHourFromPeriodSensor(
+                period=i,
                 hass=hass,
                 settings=settings,
                 coordinator=coordinator,
@@ -492,6 +502,66 @@ class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
             self._attr_is_on = is_on
             self._available = True
 
+
+class CheapestHourFromPeriodSensor(BinarySpotRateSensorBase):
+    def __init__(self, period: int, hass: HomeAssistant, settings: Settings, coordinator: SpotRateCoordinator) -> None:
+        self.period = period
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator)
+
+    @property
+    def icon(self) -> str:
+        return 'mdi:cash-clock'
+
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.spot_{self._settings.resource.lower()}_is_cheapest_hour_in_{self.period}_hours_block'
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return f'Spot {self._settings.resource} Is Cheapest Hour In {self.hours} Hours Block'
+
+    def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
+        half = (self.period - 1) / 2
+        my_price = rate_data.hour_for_dt(start + timedelta(hours=half)).price
+        if my_price is None:
+            return {False}
+
+        dt = start
+        while dt <= end:
+            range_price = rate_data.hour_for_dt(dt).price
+            if range_price < my_price:
+                return {False}
+
+            dt += timedelta(hours=1)
+        return {True}
+
+    def update(self, rate_data: Optional[SpotRateData]):
+        self._attr = {}
+        self._attr_is_on = None
+
+        if not rate_data:
+            self._available = False
+        else:
+            is_on = False
+
+            for hour in rate_data.hours_by_dt.values():
+                half = (self.period - 1) / 2
+                start = hour.dt_local - timedelta(hours=half)
+                end = hour.dt_local + timedelta(hours=half, seconds=-1)
+
+                # Ignore start times before now, we only want future blocks
+                if end < rate_data.now:
+                    continue
+
+                if not self._attr:
+                    self._attr = self._compute_attr(rate_data, start, end)
+
+                if start <= rate_data.now <= end:
+                    is_on = True
+
+            self._attr_is_on = is_on
+            self._available = True
 
 class HasTomorrowData(BinarySpotRateSensorBase):
     @property

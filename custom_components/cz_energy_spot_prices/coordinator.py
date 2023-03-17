@@ -18,6 +18,7 @@ from .spot_rate import SpotRate, OTEFault
 logger = logging.getLogger(__name__)
 
 CONSECUTIVE_HOURS = (1, 2, 3, 4, 6, 8)
+CHEAPEST_HOUR_FROM_PERIOD = (3, 5, 7, 9, 13)
 
 class SpotRateHour:
 
@@ -31,6 +32,8 @@ class SpotRateHour:
         self._consecutive_sum_prices: Dict[int, Decimal] = {}
 
         self.cheapest_consecutive_order = {i: 0 for i in CONSECUTIVE_HOURS}
+
+        self.cheapest_from_block = {i: 0 for i in CHEAPEST_HOUR_FROM_PERIOD}
 
 
 class SpotRateDay:

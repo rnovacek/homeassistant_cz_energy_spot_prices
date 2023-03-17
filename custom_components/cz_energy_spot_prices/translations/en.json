@@ -17,7 +17,8 @@
                 "data": {
                     "additional_costs_buy": "Additional costs when buying energy",
                     "additional_costs_sell": "Additional costs when selling energy",
-                    "cheapest_consecutive_hours_buy": "Hours of cheapest consecutive prices for buying"
+                    "cheapest_consecutive_hours_buy": "Hours of cheapest consecutive prices for buying",
+                    "cheapest_hour_from_period_buy": "Cheapest hour within a larger period"
                 }
             }
         }
