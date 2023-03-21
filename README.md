@@ -86,6 +86,7 @@ now:
   label: Now
 series:
   - entity: sensor.current_spot_electricity_price
+    float_precision: 2
     type: column # or "line" if you prefer
     show:
       in_header: raw
