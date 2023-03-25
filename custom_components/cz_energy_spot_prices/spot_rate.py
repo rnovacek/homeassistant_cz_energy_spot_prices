@@ -109,13 +109,16 @@ class SpotRate:
 
             hour_el = item.find('{http://www.ote-cr.cz/schema/service/public}Hour')
             if hour_el is None or hour_el.text is None:
-                raise InvalidFormat('Item has no "Hour" child or is empty')
-            current_hour = int(hour_el.text) - 1  # Minus 1 because OTE reports nth hour (starting with 1st) - "1" for 0:00 - 1:00
+                current_hour = 0
+            else:
+                current_hour = int(hour_el.text) - 1  # Minus 1 because OTE reports nth hour (starting with 1st) - "1" for 0:00 - 1:00
 
             price_el = item.find('{http://www.ote-cr.cz/schema/service/public}Price')
             if price_el is None or price_el.text is None:
-                raise InvalidFormat('Item has no "Price" child or is empty')
+                logger.warn('Item has no "Price" child or is empty')
+                continue
             current_price = Decimal(price_el.text)
+
             if unit == 'kWh':
                 # API returns price for MWh, we need to covert to kWh
                 current_price /= Decimal(1000)
@@ -123,7 +126,10 @@ class SpotRate:
                 raise ValueError(f'Invalid unit {unit}')
 
             start_of_day = datetime.combine(current_date, time(0), tzinfo=self.timezone)
-            dt = start_of_day + timedelta(hours=current_hour)
+
+            # Because of daylight saving time, we need to convert time to UTC, then add hours and convert back to local time
+            dt = (start_of_day.astimezone(self.utc) + timedelta(hours=current_hour)).astimezone(self.timezone)
+
             result[dt.astimezone(self.utc)] = current_price
 
         return result
