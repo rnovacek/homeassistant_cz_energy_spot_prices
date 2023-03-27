@@ -86,7 +86,7 @@ class SpotRateData:
         for base_dt, hour in self.hours_by_dt.items():
             rate = Decimal(0)
             for offset in range(CONSECUTIVE_HOURS[-1]):
-                prev_dt = (base_dt.astimezone(utc) - timedelta(hours=offset)).astimezone(zoneinfo)
+                prev_dt = base_dt - timedelta(hours=offset)
                 prev_hour = self.hours_by_dt.get(prev_dt)
                 if not prev_hour:
                     # Out of range, probably before yesterday
