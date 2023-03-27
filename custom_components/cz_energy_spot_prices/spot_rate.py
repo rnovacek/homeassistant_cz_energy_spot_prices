@@ -110,12 +110,13 @@ class SpotRate:
             hour_el = item.find('{http://www.ote-cr.cz/schema/service/public}Hour')
             if hour_el is None or hour_el.text is None:
                 current_hour = 0
+                logger.warning('Item has no "Hour" child or is empty: %s', current_date)
             else:
                 current_hour = int(hour_el.text) - 1  # Minus 1 because OTE reports nth hour (starting with 1st) - "1" for 0:00 - 1:00
 
             price_el = item.find('{http://www.ote-cr.cz/schema/service/public}Price')
             if price_el is None or price_el.text is None:
-                logger.warn('Item has no "Price" child or is empty')
+                logger.warning('Item has no "Price" child or is empty: %s', current_date)
                 continue
             current_price = Decimal(price_el.text)
 
@@ -127,10 +128,12 @@ class SpotRate:
 
             start_of_day = datetime.combine(current_date, time(0), tzinfo=self.timezone)
 
-            # Because of daylight saving time, we need to convert time to UTC, then add hours and convert back to local time
-            dt = (start_of_day.astimezone(self.utc) + timedelta(hours=current_hour)).astimezone(self.timezone)
+            # Because of daylight saving time, we need to convert time to UTC
+            dt = start_of_day.astimezone(self.utc) + timedelta(hours=current_hour)
 
-            result[dt.astimezone(self.utc)] = current_price
+            logger.info('Spot price for %s (%s): %s', dt, dt.astimezone(self.timezone), current_price)
+
+            result[dt] = current_price
 
         return result
 
