@@ -61,6 +61,7 @@ class SpotRateDay:
 
 class SpotRateData:
     def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo) -> None:
+        utc = ZoneInfo('UTC')
         self.now = self.get_now(zoneinfo)
         self.today_date = self.now.date()
         self.tomorrow_date = self.today_date + timedelta(days=1)
@@ -85,7 +86,8 @@ class SpotRateData:
         for base_dt, hour in self.hours_by_dt.items():
             rate = Decimal(0)
             for offset in range(CONSECUTIVE_HOURS[-1]):
-                prev_hour = self.hours_by_dt.get(base_dt - timedelta(hours=offset))
+                prev_dt = (base_dt.astimezone(utc) - timedelta(hours=offset)).astimezone(zoneinfo)
+                prev_hour = self.hours_by_dt.get(prev_dt)
                 if not prev_hour:
                     # Out of range, probably before yesterday
                     continue
