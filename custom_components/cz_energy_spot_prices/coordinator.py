@@ -97,6 +97,11 @@ class SpotRateData:
                 if (offset + 1) in CONSECUTIVE_HOURS:
                     hour._consecutive_sum_prices[(offset + 1)] = rate
 
+        for hour in self.hours_by_dt.values():
+            logger.info('HOUR %s %s %s %s', hour.dt_local, hour.dt_utc, hour.price, hour._consecutive_sum_prices)
+
+        logger.info('today_day %s', self.today_day.hours_by_dt.keys())
+
         for consecutive in CONSECUTIVE_HOURS:
             for i, hour in enumerate(sorted(self.today_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive]), 1):
                 hour.cheapest_consecutive_order[consecutive] = i
