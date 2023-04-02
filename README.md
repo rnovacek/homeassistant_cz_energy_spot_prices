@@ -28,6 +28,7 @@ You can select an energy unit between kWh and MWh when configuring the integrati
 | **Spot Electricity Is Cheapest** | `On` when current hour has the cheapest price, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
 | **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current hour is in a block of cheapest consecutive hours, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
 
+<!-- FIXME: add gas sensors when released -->
 
 ## Common attributes
 
@@ -94,4 +95,57 @@ series:
       return Object.entries(entity.attributes).map(([date, value], index) => {
         return [new Date(date).getTime(), value];
       });
+```
+
+## Find cheapest hours in selected interval
+
+Add this as a [template sensor](https://www.home-assistant.io/integrations/template/). Change the intervals on lines 3-5, the sensor will be on when
+cheapest hour in any of the intervals is active. Or you can replace the last line with `{{ min.cheapest_hours }}` to display the cheapest hours.
+
+This is useful for example if you want to turn on your water heater in the afternoon and then again during the night.
+
+```jinja
+{# Define your intervals here as tuples (hour starting the interval, hour ending the interval (excluded)) #}
+{% set intervals = [
+  (0, 8),
+  (8, 16),
+  (16, 24),
+] %}
+
+{# We need to use namespace so we can write into it in inner cycle #}
+{% set min = namespace(price=None, dt=None, cheapest_hours=[]) %}
+{% set cheapest_hours = [] %}
+
+
+{% for interval in intervals %}
+  {# Reset min price from previous runs #}
+  {% set min.price = None %}
+
+  {# Go through all the hours in the interval (end excluded) and find the hour with lowest price #}
+  {% for i in range(interval[0], interval[1]) %}
+     {# Get datetime of current hour in current interval #}
+     {% set hour_dt = now().replace(hour=i, minute=0, second=0, microsecond=0) %}
+
+     {# Get value for that hour #}
+     {% set value = states.sensor.current_spot_electricity_hour_order.attributes.get(hour_dt.isoformat()) %}
+
+     {# value is tuple (order, price), we'll use the price #}
+     {% set price = value[1] %}
+
+     {# Min price is not set or is higher than price of current hour => store the min price and hour #}
+     {% if min.price is none or price < min.price %}
+        {% set min.price = price %}
+        {% set min.dt = hour_dt %}
+     {% endif %}
+  {% endfor %}
+
+  {# Store cheapest hour in current interval #}
+  {% set min.cheapest_hours = min.cheapest_hours + [min.dt.hour] %}
+{% endfor %}
+
+{# use this to get the cheapest hours #}
+{# {{ min.cheapest_hours }} #}
+
+{# return True if current hour is in the cheapest hour of any interval #}
+{{ now().hour in min.cheapest_hours }}
 ```
