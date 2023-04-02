@@ -1,19 +1,97 @@
 from zoneinfo import ZoneInfo
 from datetime import timezone, datetime
-from typing import Coroutine
+from typing import Coroutine, Literal
 from pathlib import Path
 from decimal import Decimal
+from xml.etree import ElementTree as ET
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.cz_energy_spot_prices.sensor import (
-    SpotRateSensor, CurrentEnergyHourOrder, Settings, SpotRate, SpotRateCoordinator,
-    ConsecutiveCheapestSensor,
+    SpotRateElectricitySensor, CurrentElectricityHourOrder, Settings, SpotRate, SpotRateCoordinator,
+    ConsecutiveCheapestElectricitySensor, TodayGasSensor, TomorrowGasSensor,
 )
 from custom_components.cz_energy_spot_prices.spot_rate import SpotRate
-from custom_components.cz_energy_spot_prices.coordinator import SpotRateData
+from custom_components.cz_energy_spot_prices import coordinator
 from homeassistant.core import HomeAssistant
+
+
+def on_ote_cr_post(*args, **kwargs):
+    in_xml = ET.fromstring(kwargs['data'])
+    body = in_xml.find('{http://schemas.xmlsoap.org/soap/envelope/}Body')
+    assert body  is not None and body[0]
+    fn_tag = body[0]
+    in_eur = True
+
+    if 'GetDamPriceE' in fn_tag.tag:
+        in_eur_tag = fn_tag.find('{http://www.ote-cr.cz/schema/service/public}InEur')
+        assert in_eur_tag is not None
+        if in_eur_tag.text == 'false':
+            in_eur = False
+        elif in_eur_tag.text == 'true':
+            in_eur = True
+        else:
+            raise ValueError(f'Unexpected value of InEur: {in_eur_tag.text}')
+        resource = 'electricity'
+    elif 'GetImPriceG' in fn_tag.tag:
+        resource = 'gas'
+    else:
+        raise ValueError(f'Unexpected function: {fn_tag}')
+
+    session_mock = MagicMock(name='session_mock')
+    currency = "EUR" if in_eur else "CZK"
+    with open(Path(__file__).parent / 'fixtures' / f'ote-{resource}-2022-12-03_{currency}.xml') as f:
+        text = f.read()
+        session_mock.__aenter__.return_value.status = 200
+        session_mock.__aenter__.return_value.text = AsyncMock(name='text', return_value=text)
+    return session_mock
+
+def on_cnb_get(*args, **kwargs):
+    assert args[1] == 'https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt'
+    date = kwargs['params']['date']
+    assert date == '02.04.2023'
+
+    session_mock = MagicMock(name='session_mock')
+    with open(Path(__file__).parent / 'fixtures' / f'cnb-2022-12-03.xml') as f:
+        text = f.read()
+        session_mock.__aenter__.return_value.status = 200
+        session_mock.__aenter__.return_value.text = AsyncMock(name='text', return_value=text)
+    return session_mock
+
+
+class TestSensorBase:
+    def _setup(self, hass: HomeAssistant, currency: str, unit: SpotRate.EnergyUnit, resource: Literal['electricity', 'gas']):
+        self.resource = resource
+        self.timezone = 'Europe/Prague'
+        self.hass = hass
+        self.settings = Settings(
+            currency=currency,
+            unit=unit,
+            currency_human={
+                'EUR': '€',
+                'CZK': 'Kč',
+                'USD': '$',
+            }.get(currency) or '?',
+            timezone=self.timezone,
+            zoneinfo=ZoneInfo(self.timezone),
+        )
+
+        self.spot_rate = SpotRate()
+        self.coordinator = SpotRateCoordinator(
+            hass=self.hass,
+            spot_rate=self.spot_rate,
+            in_eur=self.settings.currency == 'EUR',
+            unit=unit,
+        )
+
+    async def _refresh(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr('aiohttp.ClientSession.post', on_ote_cr_post)
+        monkeypatch.setattr('aiohttp.ClientSession.get', on_cnb_get)
+        await self.coordinator.async_refresh()
+
+    def _convert_unit(self, value: Decimal, unit: SpotRate.EnergyUnit) -> Decimal:
+        return value * (Decimal('0.001') if unit == 'kWh' else Decimal(1))
 
 
 @pytest.mark.parametrize('currency,unit', (
@@ -23,7 +101,7 @@ from homeassistant.core import HomeAssistant
     ('EUR', 'MWh'),
 ))
 @pytest.mark.asyncio
-class TestSensors:
+class TestElectricitySensors(TestSensorBase):
     TIME_ATTRIBUTES = {
         '2022-12-03T00:00:00+01:00': {
             'CZK': Decimal('6362.85'),
@@ -267,47 +345,10 @@ class TestSensors:
         },
     }
 
-    def _setup(self, hass: HomeAssistant, currency: str, unit: SpotRate.EnergyUnit):
-        self.timezone = 'Europe/Prague'
-        self.hass = hass
-        self.settings = Settings(
-            resource='Electricity',
-            currency=currency,
-            unit=unit,
-            currency_human={
-                'EUR': '€',
-                'CZK': 'Kč',
-                'USD': '$',
-            }.get(currency) or '?',
-            timezone=self.timezone,
-            zoneinfo=ZoneInfo(self.timezone),
-        )
-
-        self.spot_rate = SpotRate()
-        self.coordinator = SpotRateCoordinator(
-            hass=self.hass,
-            spot_rate=self.spot_rate,
-            in_eur=self.settings.currency == 'EUR',
-            unit=unit,
-        )
-
-    async def _refresh(self, monkeypatch: pytest.MonkeyPatch):
-        session_mock = MagicMock(name='session_mock')
-        with open(Path(__file__).parent / 'fixtures' / f'ote-2022-12-03_{self.settings.currency}.xml') as f:
-            text = f.read()
-            session_mock.return_value.__aenter__.return_value.status = 200
-            session_mock.return_value.__aenter__.return_value.text = AsyncMock(name='text', return_value=text)
-
-        monkeypatch.setattr('aiohttp.ClientSession.post', session_mock)
-        await self.coordinator.async_refresh()
-
-    def _convert_unit(self, value: Decimal, unit: SpotRate.EnergyUnit) -> Decimal:
-        return value * (Decimal('0.001') if unit == 'kWh' else Decimal(1))
-
     async def test_spot_rate(self, hass: Coroutine[None, None, HomeAssistant], monkeypatch: pytest.MonkeyPatch, currency, unit):
-        self._setup(await hass, currency, unit)
+        self._setup(await hass, currency, unit, 'electricity')
 
-        rate_sensor = SpotRateSensor(
+        rate_sensor = SpotRateElectricitySensor(
             hass=self.hass,
             settings=self.settings,
             coordinator=self.coordinator,
@@ -320,7 +361,7 @@ class TestSensors:
 
         # Midnight == 1st hour of the day
         now = datetime(2022, 12, 3, 0, tzinfo=ZoneInfo('Europe/Prague'))
-        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert rate_sensor.available is True
@@ -329,7 +370,7 @@ class TestSensors:
 
         # 1am == 2nd hour of the day
         now = datetime(2022, 12, 3, 1, tzinfo=ZoneInfo('Europe/Prague'))
-        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert rate_sensor.available is True
@@ -337,9 +378,9 @@ class TestSensors:
         assert rate_sensor.extra_state_attributes == {k: float(self._convert_unit(v[currency], unit)) for k, v in self.TIME_ATTRIBUTES.items()}
 
     async def test_hour_order(self, hass: Coroutine[None, None, HomeAssistant], monkeypatch: pytest.MonkeyPatch, currency, unit):
-        self._setup(await hass, currency, unit)
+        self._setup(await hass, currency, unit, 'electricity')
 
-        hour_order = CurrentEnergyHourOrder(
+        hour_order = CurrentElectricityHourOrder(
             hass=self.hass,
             settings=self.settings,
             coordinator=self.coordinator,
@@ -352,7 +393,7 @@ class TestSensors:
 
         # Midnight == 1st hour of the day
         now = datetime(2022, 12, 3, 0, tzinfo=ZoneInfo('Europe/Prague'))
-        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert hour_order.available is True
@@ -365,7 +406,7 @@ class TestSensors:
 
         # 1am == 2nd hour of the day
         now = datetime(2022, 12, 3, 1, tzinfo=ZoneInfo('Europe/Prague'))
-        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
         assert hour_order.available is True
@@ -377,8 +418,8 @@ class TestSensors:
         }
 
     async def test_consecutive(self, hass: Coroutine[None, None, HomeAssistant], monkeypatch: pytest.MonkeyPatch, currency, unit):
-        self._setup(await hass, currency, unit)
-        consecutive = ConsecutiveCheapestSensor(2, hass=self.hass, settings=self.settings, coordinator=self.coordinator)
+        self._setup(await hass, currency, unit, 'electricity')
+        consecutive = ConsecutiveCheapestElectricitySensor(2, hass=self.hass, settings=self.settings, coordinator=self.coordinator)
         consecutive.entity_id = consecutive.unique_id
         await consecutive.async_added_to_hass()
         assert consecutive.available is False
@@ -386,6 +427,58 @@ class TestSensors:
         assert consecutive.extra_state_attributes is None
 
         now = datetime(2022, 12, 3, 0, tzinfo=ZoneInfo('Europe/Prague'))
-        monkeypatch.setattr(SpotRateData, 'get_now', lambda self, zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
         await self._refresh(monkeypatch)
 
+
+@pytest.mark.parametrize('currency,unit', (
+    ('CZK', 'kWh'),
+    ('EUR', 'kWh'),
+    ('CZK', 'MWh'),
+    ('EUR', 'MWh'),
+))
+@pytest.mark.asyncio
+class TestGasSensors(TestSensorBase):
+    EUR_RATE = Decimal('24.375')
+
+    async def test_spot_rate(self, hass: Coroutine[None, None, HomeAssistant], monkeypatch: pytest.MonkeyPatch, currency, unit):
+        self._setup(await hass, currency, unit, 'gas')
+
+        rate_sensor = TodayGasSensor(
+            hass=self.hass,
+            settings=self.settings,
+            coordinator=self.coordinator,
+        )
+        rate_sensor.entity_id = rate_sensor.unique_id
+        await rate_sensor.async_added_to_hass()
+        assert rate_sensor.available is False
+        assert rate_sensor.state is None
+        assert rate_sensor.extra_state_attributes is None
+
+        # Midnight == 1st hour of the day
+        now = datetime(2022, 12, 3, 0, tzinfo=ZoneInfo('Europe/Prague'))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        await self._refresh(monkeypatch)
+
+        assert rate_sensor.available is True
+        price_eur = Decimal('140.00')
+        price_czk = price_eur * self.EUR_RATE
+        assert rate_sensor.state == self._convert_unit(price_czk if currency == 'CZK' else price_eur, unit)
+
+        # 1am == 2nd hour of the day
+        now = datetime(2022, 12, 3, 1, tzinfo=ZoneInfo('Europe/Prague'))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        await self._refresh(monkeypatch)
+
+        assert rate_sensor.available is True
+        assert rate_sensor.state == self._convert_unit(price_czk if currency == 'CZK' else price_eur, unit)
+
+        # 0am == 1nd hour of second day
+        now = datetime(2022, 12, 4, 0, tzinfo=ZoneInfo('Europe/Prague'))
+        monkeypatch.setattr(coordinator, 'get_now', lambda zoneinfo = timezone.utc: now.astimezone(zoneinfo))
+        await self._refresh(monkeypatch)
+
+        assert rate_sensor.available is True
+        price_eur = Decimal('141.56')
+        price_czk = price_eur * self.EUR_RATE
+        assert rate_sensor.state == self._convert_unit(price_czk if currency == 'CZK' else price_eur, unit)

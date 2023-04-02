@@ -23,8 +23,8 @@ CURRENCIES = {
 }
 
 DATA_SCHEMA = vol.Schema({
-    vol.Required(CONF_CURRENCY, description='Currency', default='CZK'): vol.In(CURRENCIES),
-    vol.Required(CONF_UNIT_OF_MEASUREMENT, description='Energy unit', default='kWh'): vol.In(UNITS),
+    vol.Required(CONF_CURRENCY, description='Currency', default='CZK'): vol.In(CURRENCIES),  # type: ignore
+    vol.Required(CONF_UNIT_OF_MEASUREMENT, description='Energy unit', default='kWh'): vol.In(UNITS),  # type: ignore
 })
 
 

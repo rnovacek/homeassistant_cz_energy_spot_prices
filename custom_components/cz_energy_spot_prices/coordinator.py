@@ -1,8 +1,9 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal
-from typing import Dict, Union, Optional, Sequence, List
+from typing import Dict, Union, Optional
 
 import async_timeout
 
@@ -18,6 +19,11 @@ from .spot_rate import SpotRate, OTEFault
 logger = logging.getLogger(__name__)
 
 CONSECUTIVE_HOURS = (1, 2, 3, 4, 6, 8)
+
+
+def get_now(zoneinfo: Union[timezone, ZoneInfo] = timezone.utc) -> datetime:
+    return datetime.now(zoneinfo)
+
 
 class SpotRateHour:
 
@@ -59,10 +65,9 @@ class SpotRateDay:
         return most_expensive_hour
 
 
-class SpotRateData:
+class HourlySpotRateData:
     def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo) -> None:
-        utc = ZoneInfo('UTC')
-        self.now = self.get_now(zoneinfo)
+        self.now = get_now(zoneinfo)
         self.today_date = self.now.date()
         self.tomorrow_date = self.today_date + timedelta(days=1)
 
@@ -97,21 +102,15 @@ class SpotRateData:
                 if (offset + 1) in CONSECUTIVE_HOURS:
                     hour._consecutive_sum_prices[(offset + 1)] = rate
 
-        for hour in self.hours_by_dt.values():
-            logger.info('HOUR %s %s %s %s', hour.dt_local, hour.dt_utc, hour.price, hour._consecutive_sum_prices)
-
-        logger.info('today_day %s', self.today_day.hours_by_dt.keys())
-
         for consecutive in CONSECUTIVE_HOURS:
-            for i, hour in enumerate(sorted(self.today_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive]), 1):
+            sorted_today_hours = sorted(self.today_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive])
+            for i, hour in enumerate(sorted_today_hours, 1):
                 hour.cheapest_consecutive_order[consecutive] = i
 
             if self.tomorrow_day is not None:
-                for i, hour in enumerate(sorted(self.tomorrow_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive]), 1):
+                sorted_tomorrow_hours = sorted(self.tomorrow_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive])
+                for i, hour in enumerate(sorted_tomorrow_hours, 1):
                     hour.cheapest_consecutive_order[consecutive] = i
-
-    def get_now(self, zoneinfo: Union[timezone, ZoneInfo] = timezone.utc) -> datetime:
-        return datetime.now(zoneinfo)
 
     def hour_for_dt(self, dt: datetime) -> SpotRateHour:
         utc_hour = dt.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
@@ -123,7 +122,7 @@ class SpotRateData:
 
     @property
     def current_hour(self) -> SpotRateHour:
-        return self.hour_for_dt(self.get_now())
+        return self.hour_for_dt(get_now())
 
     @property
     def today(self) -> SpotRateDay:
@@ -132,6 +131,36 @@ class SpotRateData:
     @property
     def tomorrow(self) -> Optional[SpotRateDay]:
         return self.tomorrow_day
+
+
+class DailySpotRateData:
+    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo) -> None:
+        self.now = get_now(zoneinfo)
+
+        midnight_today = self.now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+        tomorrow = self.now + timedelta(days=1)
+        midnight_tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+        self._today = rates[midnight_today]
+        # It's 0 when there are no data, we want None
+        self._tomorrow = rates.get(midnight_tomorrow, None) or None
+
+    @property
+    def today(self) -> Decimal:
+        return self._today
+
+    @property
+    def tomorrow(self) -> Optional[Decimal]:
+        return self._tomorrow
+
+
+class SpotRateData:
+    def __init__(self, electricity: HourlySpotRateData, gas: DailySpotRateData):
+        self.electricity = electricity
+        self.gas = gas
+
+    def get_now(self, zoneinfo: Union[timezone, ZoneInfo] = timezone.utc) -> datetime:
+        return get_now(zoneinfo=zoneinfo)
 
 
 class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
@@ -171,8 +200,14 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
             # Note: asyncio.TimeoutError and aiohttp.ClientError are already
             # handled by the data update coordinator.
             async with async_timeout.timeout(10):
-                rates = await self._spot_rate.get_rates(now, in_eur=self._in_eur, unit=self._unit)
-                return SpotRateData(rates, zoneinfo)
+                electricity_rates, gas_rates = await asyncio.gather(
+                    self._spot_rate.get_electricity_rates(now, in_eur=self._in_eur, unit=self._unit),
+                    self._spot_rate.get_gas_rates(now, in_eur=self._in_eur, unit=self._unit),
+                )
+                return SpotRateData(
+                    electricity=HourlySpotRateData(electricity_rates, zoneinfo),
+                    gas=DailySpotRateData(gas_rates, zoneinfo=zoneinfo),
+                )
 
         except OTEFault as err:
             raise UpdateFailed(f"Error communicating with API: {err}")

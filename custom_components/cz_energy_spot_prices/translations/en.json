@@ -5,7 +5,6 @@
                 "title": "Spot prices configuration",
                 "data": {
                     "currency": "Currency",
-                    "resource": "Resource",
                     "unit_of_measurement": "Unit of energy"
                 }
             }

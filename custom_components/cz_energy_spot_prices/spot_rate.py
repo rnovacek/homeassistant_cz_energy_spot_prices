@@ -1,6 +1,6 @@
 import sys
 import logging
-from datetime import date, datetime, timedelta, time, timezone
+from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from typing import Dict, Literal
 from decimal import Decimal
@@ -9,10 +9,12 @@ import xml.etree.ElementTree as ET
 
 import aiohttp
 
+from .cnb_rate import CnbRate
+
 logger = logging.getLogger(__name__)
 
 
-QUERY = '''<?xml version="1.0" encoding="UTF-8" ?>
+QUERY_ELECTRICITY = '''<?xml version="1.0" encoding="UTF-8" ?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://www.ote-cr.cz/schema/service/public">
     <soapenv:Header/>
     <soapenv:Body>
@@ -25,6 +27,17 @@ QUERY = '''<?xml version="1.0" encoding="UTF-8" ?>
 </soapenv:Envelope>
 '''
 
+QUERY_GAS = '''<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://www.ote-cr.cz/schema/service/public">
+    <soapenv:Header/>
+    <soapenv:Body>
+        <pub:GetImPriceG>
+            <pub:StartDate>{start}</pub:StartDate>
+            <pub:EndDate>{end}</pub:EndDate>
+        </pub:GetImPriceG>
+    </soapenv:Body>
+</soapenv:Envelope>
+'''
 # Response example
 # <?xml version="1.0" ?>
 # <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -59,7 +72,7 @@ class InvalidFormat(OTEFault):
 
 
 class SpotRate:
-    ELECTRICITY_PRICE_URL = 'https://www.ote-cr.cz/services/PublicDataService'
+    OTE_PUBLIC_URL = 'https://www.ote-cr.cz/services/PublicDataService'
     UNIT = 'MWh'
 
     RateByDatetime = Dict[datetime, Decimal]
@@ -69,22 +82,49 @@ class SpotRate:
         self.timezone = ZoneInfo('Europe/Prague')
         self.utc = ZoneInfo('UTC')
 
-    def get_query(self, start: date, end: date, in_eur: bool) -> str:
-        return QUERY.format(start=start.isoformat(), end=end.isoformat(), in_eur='true' if in_eur else 'false')
+    def get_electricity_query(self, start: date, end: date, in_eur: bool) -> str:
+        return QUERY_ELECTRICITY.format(start=start.isoformat(), end=end.isoformat(), in_eur='true' if in_eur else 'false')
 
-    async def get_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
+    def get_gas_query(self, start: date, end: date) -> str:
+        return QUERY_GAS.format(start=start.isoformat(), end=end.isoformat())
+
+    async def _download(self, query: str) -> str:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.OTE_PUBLIC_URL, data=query) as response:
+                return await response.text()
+
+    async def get_electricity_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
         assert start.tzinfo, 'Timezone must be set'
         start_tz = start.astimezone(self.timezone)
         first_day = start_tz.date()
         # From yesterday (as we need it for longest consecutive) till tomorrow (we won't have more data anyway)
-        query = self.get_query(first_day - timedelta(days=1), first_day + timedelta(days=1), in_eur=in_eur)
+        query = self.get_electricity_query(first_day - timedelta(days=1), first_day + timedelta(days=1), in_eur=in_eur)
 
         return await self._get_rates(query, unit)
 
-    async def _download(self, query: str) -> str:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.ELECTRICITY_PRICE_URL, data=query) as response:
-                return await response.text()
+    async def get_gas_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
+        assert start.tzinfo, 'Timezone must be set'
+        start_tz = start.astimezone(self.timezone)
+        first_day = start_tz.date()
+        # today and tomorrow
+        query = self.get_gas_query(first_day, first_day + timedelta(days=1))
+
+        rates_task = self._get_rates(query, unit)
+        if not in_eur:
+            cnb_rate = CnbRate()
+            rates, currency_rates = await asyncio.gather(
+                rates_task,
+                cnb_rate.get_current_rates(),
+            )
+            eur_rate = currency_rates['EUR']
+            converted = {}
+            for dt, value in rates.items():
+                converted[dt] = value * eur_rate
+            return converted
+        else:
+            rates = await rates_task
+
+        return rates
 
     async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh']) -> RateByDatetime:
         text = await self._download(query)
@@ -131,8 +171,6 @@ class SpotRate:
             # Because of daylight saving time, we need to convert time to UTC
             dt = start_of_day.astimezone(self.utc) + timedelta(hours=current_hour)
 
-            logger.info('Spot price for %s (%s): %s', dt, dt.astimezone(self.timezone), current_price)
-
             result[dt] = current_price
 
         return result
@@ -140,12 +178,30 @@ class SpotRate:
 
 if __name__ == '__main__':
     spot_rate = SpotRate()
+    tz = ZoneInfo('Europe/Prague')
     if len(sys.argv) >= 2:
-        dt = date.fromisoformat(sys.argv[1])
+        use_date = date.fromisoformat(sys.argv[1])
+        dt = datetime.now(tz=tz).replace(year=use_date.year, month=use_date.month, day=use_date.day)
     else:
-        dt = date.today()
+        dt = datetime.now(tz=tz)
 
-    in_eur = True
+    in_eur = False
 
-    query = spot_rate.get_query(dt - timedelta(days=1), dt + timedelta(days=1), in_eur=in_eur)
-    print(asyncio.run(spot_rate._download(query)))
+    def print_rates(rates_eur, rates_czk):
+        for dt, eur in rates_eur.items():
+            czk = rates_czk[dt]
+            print(f'{dt.isoformat():30s} {eur:10.4f} {czk:10.4f}')
+
+    # query = spot_rate.get_electricity_query(dt - timedelta(days=1), dt + timedelta(days=1), in_eur=in_eur)
+    rates_eur = asyncio.run(spot_rate.get_electricity_rates(dt, in_eur=True, unit='kWh'))
+    rates_czk = asyncio.run(spot_rate.get_electricity_rates(dt, in_eur=False, unit='kWh'))
+
+    print('ELECTRICITY')
+    print_rates(rates_eur, rates_czk)
+
+    rates_eur = asyncio.run(spot_rate.get_gas_rates(dt, in_eur=True, unit='kWh'))
+    rates_czk = asyncio.run(spot_rate.get_gas_rates(dt, in_eur=False, unit='kWh'))
+
+    print('GAS')
+    print_rates(rates_eur, rates_czk)
+

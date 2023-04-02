@@ -1,6 +1,5 @@
 """Czech Spot Energy Prices"""
 
-import asyncio
 import logging
 
 from homeassistant.core import HomeAssistant

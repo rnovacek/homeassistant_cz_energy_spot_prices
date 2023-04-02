@@ -2,7 +2,7 @@ import pytest
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.cz_energy_spot_prices.sensor import SpotRateSensor, Settings
+from custom_components.cz_energy_spot_prices.sensor import SpotRateElectricitySensor, Settings
 
 
 @pytest.fixture

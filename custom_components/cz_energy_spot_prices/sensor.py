@@ -14,14 +14,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .spot_rate import SpotRate
-from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS
+from .coordinator import SpotRateCoordinator, SpotRateData, HourlySpotRateData, SpotRateHour, CONSECUTIVE_HOURS
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Settings:
-    resource: str
     currency: str
     currency_human: str
     unit: str
@@ -34,7 +33,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     unit = entry.data[CONF_UNIT_OF_MEASUREMENT]
 
     settings = Settings(
-        resource='Electricity',
         currency=currency,
         unit=unit,
         currency_human={
@@ -54,42 +52,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         unit=unit,
     )
 
-    rate_sensor = SpotRateSensor(
+    electricity_rate_sensor = SpotRateElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
     )
-    cheapest_today_sensor = CheapestTodaySensor(
+    cheapest_today_electricity_sensor = CheapestTodayElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
     )
-    cheapest_tomorrow_sensor = CheapestTomorrowSensor(
+    cheapest_tomorrow_electricity_sensor = CheapestTomorrowElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
     )
-    most_expensive_today_sensor = MostExpensiveTodaySensor(
+    most_expensive_today_electricity_sensor = MostExpensiveTodayElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
     )
-    most_expensive_tomorrow_sensor = MostExpensiveTomorrowSensor(
+    most_expensive_tomorrow_electricity_sensor = MostExpensiveTomorrowElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
     )
-    current_energy_hour_order = CurrentEnergyHourOrder(
+    current_electricity_hour_order = CurrentElectricityHourOrder(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
     )
-    tomorrow_energy_hour_order = TomorrowEnergyHourOrder(
+    tomorrow_electricity_hour_order = TomorrowElectricityHourOrder(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
     )
-    has_tomorrow_data = HasTomorrowData(
+    has_tomorrow_electricity_data = HasTomorrowElectricityData(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+    )
+
+    today_gas = TodayGasSensor(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+    )
+    tomorrow_gas = TomorrowGasSensor(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+    )
+    has_tomorrow_gas_data = HasTomorrowGasData(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
@@ -98,21 +112,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     #energy_price_sell_sensor = EnergyPriceSell()
 
     sensors = [
-        rate_sensor,
-        cheapest_today_sensor,
-        cheapest_tomorrow_sensor,
-        most_expensive_today_sensor,
-        most_expensive_tomorrow_sensor,
-        current_energy_hour_order,
-        tomorrow_energy_hour_order,
-        has_tomorrow_data,
+        electricity_rate_sensor,
+        cheapest_today_electricity_sensor,
+        cheapest_tomorrow_electricity_sensor,
+        most_expensive_today_electricity_sensor,
+        most_expensive_tomorrow_electricity_sensor,
+        current_electricity_hour_order,
+        tomorrow_electricity_hour_order,
+        has_tomorrow_electricity_data,
         #energy_price_buy_sensor,
         #energy_price_sell_sensor,
+        today_gas,
+        tomorrow_gas,
+        has_tomorrow_gas_data
     ]
 
     for i in CONSECUTIVE_HOURS:
         sensors.append(
-            ConsecutiveCheapestSensor(
+            ConsecutiveCheapestElectricitySensor(
                 hours=i,
                 hass=hass,
                 settings=settings,
@@ -184,15 +201,15 @@ class PriceSensor(SpotRateSensorBase, SensorEntity):
         return 'monetary'
 
 
-class SpotRateSensor(PriceSensor):
+class SpotRateElectricitySensor(PriceSensor):
     @property
     def unique_id(self) -> str:
-        return f'sensor.current_spot_{self._settings.resource.lower()}_price'
+        return f'sensor.current_spot_electricity_price'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Current Spot {self._settings.resource} Price'
+        return f'Current Spot Electricity Price'
 
     def update(self, rate_data: Optional[SpotRateData]):
         attributes: Dict[str, float] = {}
@@ -204,25 +221,25 @@ class SpotRateSensor(PriceSensor):
             return
 
         try:
-            current_hour = rate_data.current_hour
+            current_hour = rate_data.electricity.current_hour
             self._available = True
         except LookupError:
             logger.error(
                 'Current time "%s" is not found in SpotRate values:\n%s',
                 rate_data.get_now(),
-                '\n\t'.join([dt.isoformat() for dt in rate_data.hour_for_dt.keys()]),
+                '\n\t'.join([dt.isoformat() for dt in rate_data.electricity.hour_for_dt.keys()]),
             )
             self._available = False
             return
 
         current_value = current_hour.price
 
-        for hour_data in rate_data.today_day.hours_by_dt.values():
+        for hour_data in rate_data.electricity.today_day.hours_by_dt.values():
             dt_local = hour_data.dt_local.isoformat()
             attributes[dt_local] = float(hour_data.price)
 
-        if rate_data.tomorrow_day:
-            for hour_data in rate_data.tomorrow_day.hours_by_dt.values():
+        if rate_data.electricity.tomorrow_day:
+            for hour_data in rate_data.electricity.tomorrow_day.hours_by_dt.values():
                 dt_local = hour_data.dt_local.isoformat()
                 attributes[dt_local] = float(hour_data.price)
 
@@ -259,78 +276,78 @@ class HourFindSensor(PriceSensor):
         }
 
 
-class CheapestTodaySensor(HourFindSensor):
+class CheapestTodayElectricitySensor(HourFindSensor):
     @property
     def unique_id(self) -> str:
-        return f'sensor.current_spot_{self._settings.resource.lower()}_cheapest_today'
+        return f'sensor.current_spot_electricity_cheapest_today'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Spot Cheapest {self._settings.resource} Today'
+        return f'Spot Cheapest Electricity Today'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        return rate_data.today_day.cheapest_hour()
+        return rate_data.electricity.today_day.cheapest_hour()
 
 
-class CheapestTomorrowSensor(HourFindSensor):
+class CheapestTomorrowElectricitySensor(HourFindSensor):
     @property
     def unique_id(self) -> str:
-        return f'sensor.current_spot_{self._settings.resource.lower()}_cheapest_tomorrow'
+        return f'sensor.current_spot_electricity_cheapest_tomorrow'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Spot Cheapest {self._settings.resource} Tomorrow'
+        return f'Spot Cheapest Electricity Tomorrow'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        if not rate_data.tomorrow:
+        if not rate_data.electricity.tomorrow:
             return None
 
-        return rate_data.tomorrow.cheapest_hour()
+        return rate_data.electricity.tomorrow.cheapest_hour()
 
 
-class MostExpensiveTodaySensor(HourFindSensor):
+class MostExpensiveTodayElectricitySensor(HourFindSensor):
     @property
     def unique_id(self) -> str:
-        return f'sensor.current_spot_{self._settings.resource.lower()}_most_expensive_today'
+        return f'sensor.current_spot_electricity_most_expensive_today'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Spot Most Expensive {self._settings.resource} Today'
+        return f'Spot Most Expensive Electricity Today'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        return rate_data.today.most_expensive_hour()
+        return rate_data.electricity.today.most_expensive_hour()
 
 
-class MostExpensiveTomorrowSensor(HourFindSensor):
+class MostExpensiveTomorrowElectricitySensor(HourFindSensor):
     @property
     def unique_id(self) -> str:
-        return f'sensor.current_spot_{self._settings.resource.lower()}_most_expensive_tomorrow'
+        return f'sensor.current_spot_electricity_most_expensive_tomorrow'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Spot Most Expensive {self._settings.resource} Tomorrow'
+        return f'Spot Most Expensive Electricity Tomorrow'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        if not rate_data.tomorrow:
+        if not rate_data.electricity.tomorrow:
             return None
 
-        return rate_data.tomorrow.most_expensive_hour()
+        return rate_data.electricity.tomorrow.most_expensive_hour()
 
 
 class EnergyHourOrder(SpotRateSensorBase):
@@ -347,15 +364,15 @@ class EnergyHourOrder(SpotRateSensorBase):
         return None
 
 
-class CurrentEnergyHourOrder(EnergyHourOrder):
+class CurrentElectricityHourOrder(EnergyHourOrder):
     @property
     def unique_id(self) -> str:
-        return f'sensor.current_spot_{self._settings.resource.lower()}_hour_order'
+        return f'sensor.current_spot_electricity_hour_order'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Current Spot {self._settings.resource} Hour Order'
+        return f'Current Spot Electricity Hour Order'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -364,28 +381,28 @@ class CurrentEnergyHourOrder(EnergyHourOrder):
             self._value = None
             return
 
-        cheapest_order = rate_data.current_hour.cheapest_consecutive_order[1]
+        cheapest_order = rate_data.electricity.current_hour.cheapest_consecutive_order[1]
         if cheapest_order != self._value:
             logger.debug('%s updated from %s to %s', self.unique_id, self._value, cheapest_order)
             self._value = cheapest_order
         else:
             logger.debug('%s unchanged with %d', self.unique_id, cheapest_order)
 
-        for hour in rate_data.today.hours_by_dt.values():
+        for hour in rate_data.electricity.today.hours_by_dt.values():
             self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
 
         self._available = True
 
 
-class TomorrowEnergyHourOrder(EnergyHourOrder):
+class TomorrowElectricityHourOrder(EnergyHourOrder):
     @property
     def unique_id(self) -> str:
-        return f'sensor.tomorrow_spot_{self._settings.resource.lower()}_hour_order'
+        return f'sensor.tomorrow_spot_electricity_hour_order'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Tomorrow Spot {self._settings.resource} Hour Order'
+        return f'Tomorrow Spot Electricity Hour Order'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -393,12 +410,12 @@ class TomorrowEnergyHourOrder(EnergyHourOrder):
 
         if not rate_data:
             self._available = False
-        elif rate_data.tomorrow is None:
+        elif rate_data.electricity.tomorrow is None:
             self._available = False
         else:
             self._available = True
 
-            for hour in rate_data.tomorrow.hours_by_dt.values():
+            for hour in rate_data.electricity.tomorrow.hours_by_dt.values():
                 self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
 
 
@@ -412,7 +429,7 @@ class EnergyPriceSell(SensorEntity):
         super().__init__()
 
 
-class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
+class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
     def __init__(self, hours: int, hass: HomeAssistant, settings: Settings, coordinator: SpotRateCoordinator) -> None:
         self.hours = hours
         super().__init__(hass=hass, settings=settings, coordinator=coordinator)
@@ -424,17 +441,17 @@ class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
     @property
     def unique_id(self) -> str:
         if self.hours == 1:
-            return f'sensor.spot_{self._settings.resource.lower()}_is_cheapest'
+            return f'sensor.spot_electricity_is_cheapest'
         else:
-            return f'sensor.spot_{self._settings.resource.lower()}_is_cheapest_{self.hours}_hours_block'
+            return f'sensor.spot_electricity_is_cheapest_{self.hours}_hours_block'
 
     @property
     def name(self):
         """Return the name of the sensor."""
         if self.hours == 1:
-            return f'Spot {self._settings.resource} Is Cheapest'
+            return f'Spot Electricity Is Cheapest'
         else:
-            return f'Spot {self._settings.resource} Is Cheapest {self.hours} Hours Block'
+            return f'Spot Electricity Is Cheapest {self.hours} Hours Block'
 
     def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
         dt = start
@@ -444,7 +461,7 @@ class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
         count: int = 0
 
         while dt <= end:
-            hour = rate_data.hour_for_dt(dt)
+            hour = rate_data.electricity.hour_for_dt(dt)
             sum_price += hour.price
             count += 1
             if min_price is None or hour.price < min_price:
@@ -473,12 +490,12 @@ class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
         else:
             is_on = False
 
-            for hour in rate_data.hours_by_dt.values():
+            for hour in rate_data.electricity.hours_by_dt.values():
                 start = hour.dt_local - timedelta(hours=self.hours - 1)
                 end = hour.dt_local + timedelta(hours=1, seconds=-1)
 
                 # Ignore start times before now, we only want future blocks
-                if end < rate_data.now:
+                if end < rate_data.electricity.now:
                     continue
 
                 if hour.cheapest_consecutive_order[self.hours] == 1:
@@ -486,26 +503,26 @@ class ConsecutiveCheapestSensor(BinarySpotRateSensorBase):
                         # Only put it there once, so to contains closes interval in the future
                         self._attr = self._compute_attr(rate_data, start, end)
 
-                    if start <= rate_data.now <= end:
+                    if start <= rate_data.electricity.now <= end:
                         is_on = True
 
             self._attr_is_on = is_on
             self._available = True
 
 
-class HasTomorrowData(BinarySpotRateSensorBase):
+class HasTomorrowElectricityData(BinarySpotRateSensorBase):
     @property
     def icon(self) -> str:
         return 'mdi:cash-clock'
 
     @property
     def unique_id(self) -> str:
-        return f'sensor.spot_{self._settings.resource.lower()}_has_tomorrow_data'
+        return f'sensor.spot_electricity_has_tomorrow_data'
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Spot {self._settings.resource} Has Tomorrow Data'
+        return f'Spot Electricity Has Tomorrow Data'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -514,5 +531,73 @@ class HasTomorrowData(BinarySpotRateSensorBase):
         if not rate_data:
             self._available = False
         else:
-            self._attr_is_on = rate_data.tomorrow is not None
+            self._attr_is_on = rate_data.electricity.tomorrow is not None
+            self._available = True
+
+
+
+class TodayGasSensor(PriceSensor):
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.current_spot_gas_price'
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return f'Current Spot Gas Price'
+
+    def update(self, rate_data: Optional[SpotRateData]):
+        if rate_data is None:
+            self._available = False
+            self._value = None
+            self._attr = {}
+            return
+
+        self._value = rate_data.gas.today
+        self._available = True
+
+
+class TomorrowGasSensor(PriceSensor):
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.tomorrow_spot_gas_price'
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return f'Tomorrow Spot Gas Price'
+
+    def update(self, rate_data: Optional[SpotRateData]):
+        if rate_data is None:
+            self._available = False
+            self._value = None
+            self._attr = {}
+            return
+
+        self._value = rate_data.gas.tomorrow
+        self._available = self._value is not None
+
+
+class HasTomorrowGasData(BinarySpotRateSensorBase):
+    @property
+    def icon(self) -> str:
+        return 'mdi:cash-clock'
+
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.spot_gas_has_tomorrow_data'
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return f'Spot Gas Has Tomorrow Data'
+
+    def update(self, rate_data: Optional[SpotRateData]):
+        self._attr = {}
+        self._attr_is_on = None
+
+        if not rate_data:
+            self._available = False
+        else:
+            self._attr_is_on = rate_data.gas.tomorrow is not None
             self._available = True
