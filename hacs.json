@@ -1,4 +1,5 @@
 {
     "name": "Czech Energy Spot Prices",
-    "render_readme": true
+    "render_readme": true,
+    "country": "CZ"
 }
