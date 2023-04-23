@@ -1,5 +1,7 @@
 # Home Assistant Czech Energy Spot Prices
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=rnovacek&repository=homeassistant_cz_energy_spot_prices&category=integration)
+
 Home Assistant integration that provides current Czech electricity spot prices based on [OTE](ote-cr.cz).
 
 You can select an energy unit between kWh and MWh when configuring the integration. OTE prices are in EUR, but you can also select to use CZK (Czech Koruna) as a currency for displayed prices (based on ČNB rate for given day).
