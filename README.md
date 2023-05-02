@@ -151,3 +151,27 @@ This is useful for example if you want to turn on your water heater in the after
 {# return True if current hour is in the cheapest hour of any interval #}
 {{ now().hour in min.cheapest_hours }}
 ```
+
+## Example automation for X cheapest hours
+
+```yaml
+alias: Turn on for cheapest X hours
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.current_spot_electricity_hour_order
+condition: []
+action:
+  - if:
+      - condition: numeric_state
+        entity_id: sensor.current_spot_electricity_hour_order
+        below: X # Replace with amount of hours you want to have it on
+    then:
+      - type: turn_on
+        entity_id: # Add entity you want to turn on
+    else:
+      - type: turn_off
+        entity_id: # Turn off the entity when cheapest interval ends
+    enabled: true
+mode: single
+```
