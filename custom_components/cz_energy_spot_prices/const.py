@@ -1,5 +1,10 @@
+from homeassistant.const import Platform
+
 DOMAIN = "cz_energy_spot_prices"
 
-ADDITIONAL_COSTS_BUY = 'additional_costs_buy'
-CHEAPEST_CONSECUTIVE_HOURS_BUY = 'cheapest_consecutive_hours_buy'
-ADDITIONAL_COSTS_SELL = 'additional_costs_sell'
+PLATFORMS = [Platform.SENSOR]
+
+
+ADDITIONAL_COSTS_BUY_ELECTRICITY = 'additional_costs_buy_electricity'
+ADDITIONAL_COSTS_SELL_ELECTRICITY = 'additional_costs_sell_electricity'
+ADDITIONAL_COSTS_BUY_GAS = 'additional_costs_buy_gas'

@@ -14,9 +14,14 @@
         "step": {
             "init": {
                 "data": {
-                    "additional_costs_buy": "Additional costs when buying energy",
-                    "additional_costs_sell": "Additional costs when selling energy",
-                    "cheapest_consecutive_hours_buy": "Hours of cheapest consecutive prices for buying"
+                    "additional_costs_buy_electricity": "Electricity cost when buying",
+                    "additional_costs_sell_electricity": "Electricity cost when selling",
+                    "additional_costs_buy_gas": "Gas cost when buying"
+                },
+                "data_description": {
+                    "additional_costs_buy_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current spot price. For example to add 21 percent VAT to the price use `'{{ value * 1.21 }}`",
+                    "additional_costs_sell_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current spot price. For example to fixed 0.25 operator fee to the price use `'{{ value - 0.25 }}`",
+                    "additional_costs_buy_gas": "Template to calculate actual costs with additional fees. Use `value` to get current spot price."
                 }
             }
         }

@@ -14,9 +14,14 @@
         "step": {
             "init": {
                 "data": {
-                    "additional_costs_buy": "Dodatečné náklady na nákup energie",
-                    "additional_costs_sell": "Dodatečné náklady na prodej energie",
-                    "cheapest_consecutive_hours_buy": "Hodiny nejlevnějšího souvislého intervalu pro nákup"
+                    "additional_costs_buy_electricity": "Cena elektřiny při nákupu",
+                    "additional_costs_sell_electricity": "Cena elektřiny při prodeji",
+                    "additional_costs_buy_gas": "Cena plynu při nákupu"
+                },
+                "data_description": {
+                    "additional_costs_buy_electricity": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní spotové ceny. Například pro přídání 21 procent DPH použijte `'{{ value * 1.21 }}`.",
+                    "additional_costs_sell_electricity": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní spotové ceny. Například pro přidání fixního poplatku operátora ve výši 0.25 použijte `'{{ value - 0.25 }}`.",
+                    "additional_costs_buy_gas": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní spotové ceny."
                 }
             }
         }

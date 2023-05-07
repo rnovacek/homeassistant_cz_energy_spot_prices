@@ -1,20 +1,21 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, Literal
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass
 
-from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT, STATE_ON, STATE_OFF
+from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.template import Template, TemplateError
 
-from .spot_rate import SpotRate
-from .coordinator import SpotRateCoordinator, SpotRateData, HourlySpotRateData, SpotRateHour, CONSECUTIVE_HOURS
+from .const import DOMAIN, ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
+from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,9 @@ class Settings:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
+    logger.info('async_setup_entry %s, data: [%s] options: [%s]', entry.unique_id, entry.data, entry.options)
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
     currency = entry.data[CONF_CURRENCY]
     unit = entry.data[CONF_UNIT_OF_MEASUREMENT]
 
@@ -42,14 +46,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         }.get(currency) or '?',
         timezone=hass.config.time_zone,
         zoneinfo=ZoneInfo(hass.config.time_zone),
-    )
-
-    spot_rate = SpotRate()
-    coordinator = SpotRateCoordinator(
-        hass=hass,
-        spot_rate=spot_rate,
-        in_eur=settings.currency == 'EUR',
-        unit=unit,
     )
 
     electricity_rate_sensor = SpotRateElectricitySensor(
@@ -108,8 +104,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         settings=settings,
         coordinator=coordinator,
     )
-    #energy_price_buy_sensor = EnergyPriceBuy()
-    #energy_price_sell_sensor = EnergyPriceSell()
+
+    additional_costs_buy_electricity = entry.options.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or ''
+    additional_costs_sell_electricity = entry.options.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or ''
+    additional_costs_buy_gas = entry.options.get(ADDITIONAL_COSTS_BUY_GAS) or ''
 
     sensors = [
         electricity_rate_sensor,
@@ -120,12 +118,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         current_electricity_hour_order,
         tomorrow_electricity_hour_order,
         has_tomorrow_electricity_data,
-        #energy_price_buy_sensor,
-        #energy_price_sell_sensor,
         today_gas,
         tomorrow_gas,
         has_tomorrow_gas_data
     ]
+
+    if additional_costs_buy_electricity:
+        energy_price_buy_electricity_sensor = ElectricityPriceBuy(
+            hass=hass,
+            resource='electricity',
+            settings=settings,
+            coordinator=coordinator,
+            template_code=additional_costs_buy_electricity,
+        )
+        sensors.append(energy_price_buy_electricity_sensor)
+
+    if additional_costs_sell_electricity:
+        energy_price_sell_electricity_sensor = ElectricityPriceSell(
+            hass=hass,
+            resource='electricity',
+            settings=settings,
+            coordinator=coordinator,
+            template_code=additional_costs_sell_electricity,
+        )
+        sensors.append(energy_price_sell_electricity_sensor)
+
+    if additional_costs_buy_gas:
+        energy_price_buy_gas_sensor = GasPriceBuy(
+            hass=hass,
+            resource='gas',
+            settings=settings,
+            coordinator=coordinator,
+            template_code=additional_costs_buy_gas,
+        )
+        sensors.append(energy_price_buy_gas_sensor)
 
     for i in CONSECUTIVE_HOURS:
         sensors.append(
@@ -419,14 +445,89 @@ class TomorrowElectricityHourOrder(EnergyHourOrder):
                 self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
 
 
-class EnergyPriceBuy(SensorEntity):
-    def __init__(self) -> None:
-        super().__init__()
+class TemplatePriceSensor(PriceSensor):
+    def __init__(self, hass: HomeAssistant, resource: Literal['electricity', 'gas'], settings: Settings, coordinator: SpotRateCoordinator, template_code: str) -> None:
+        super().__init__(hass, settings, coordinator)
+        self._resource = resource
+        try:
+            self.template = Template(template_code, hass=hass)
+        except TemplateError as e:
+            logger.error('Template error in %s: %s', self.unique_id, e)
+            self.template = None
+
+    def get_current_price(self, rate_data: SpotRateData) -> float:
+        if self._resource == 'gas':
+            print('GAS TODAY', rate_data.gas.today, self.template)
+            return float(rate_data.gas.today)
+        return float(rate_data.electricity.current_hour.price)
+
+    def update(self, rate_data: Optional[SpotRateData]):
+        if rate_data is None or not self.template:
+            self._available = False
+            self._value = None
+            self._attr = {}
+            return
+
+        try:
+            current_price = self.get_current_price(rate_data)
+            self._available = True
+        except LookupError:
+            logger.error(
+                'Current time "%s" is not found in SpotRate values:\n%s',
+                rate_data.get_now(),
+                '\n\t'.join([dt.isoformat() for dt in rate_data.electricity.hour_for_dt.keys()]),
+            )
+            self._available = False
+            return
+
+        current_value = self.template.async_render({
+            'value': float(current_price),
+        })
+        logger.info('%s updated from %s to %s', self.unique_id, self._value, current_value)
+
+        self._value = current_value
 
 
-class EnergyPriceSell(SensorEntity):
-    def __init__(self) -> None:
-        super().__init__()
+class ElectricityPriceBuy(TemplatePriceSensor):
+    @property
+    def icon(self) -> str:
+        return 'mdi:cash-minus'
+
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.current_spot_electricity_buy_price'
+
+    @property
+    def name(self):
+        return f'Current Spot Electricity Buy Price'
+
+
+class ElectricityPriceSell(TemplatePriceSensor):
+    @property
+    def icon(self) -> str:
+        return 'mdi:cash-plus'
+
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.current_spot_electricity_sell_price'
+
+    @property
+    def name(self):
+        return f'Current Spot Electricity Sell Price'
+
+
+class GasPriceBuy(TemplatePriceSensor):
+    @property
+    def icon(self) -> str:
+        return 'mdi:cash-minus'
+
+    @property
+    def unique_id(self) -> str:
+        return f'sensor.current_spot_gas_buy_price'
+
+    @property
+    def name(self):
+        return f'Current Spot Gas Buy Price'
 
 
 class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):

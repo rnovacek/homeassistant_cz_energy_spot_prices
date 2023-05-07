@@ -6,8 +6,9 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.helpers.selector import TemplateSelector
+from homeassistant.helpers.template import Template, TemplateError
 
-from .const import DOMAIN, ADDITIONAL_COSTS_BUY, ADDITIONAL_COSTS_SELL, CHEAPEST_CONSECUTIVE_HOURS_BUY
+from .const import DOMAIN, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
 
 
 logger = logging.getLogger(__name__)
@@ -28,10 +29,10 @@ DATA_SCHEMA = vol.Schema({
 })
 
 
-class ExampleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
         return OptionsFlowHandler(config_entry)
 
@@ -54,42 +55,63 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
+        self.options = dict(config_entry.options)
+        logger.debug('OptionsFlowHandler.__init__ %s; data [%s]; options [%s]', config_entry.unique_id, config_entry.data, config_entry.options)
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ):# -> FlowResult:
         """Manage the options."""
         logger.debug(
-            f"OptionsFlowHandler:async_step_init user_input [{user_input}] data [{self.config_entry.data}]"
+            f"OptionsFlowHandler:async_step_init user_input [{user_input}] data [{self.config_entry.data}] options [{self.config_entry.options}]"
         )
-        if user_input is not None:
-            if CONF_CURRENCY in self.config_entry.data:
-                user_input[CONF_CURRENCY] = self.config_entry.data[CONF_CURRENCY]
-            if CONF_UNIT_OF_MEASUREMENT in self.config_entry.data:
-                user_input[CONF_UNIT_OF_MEASUREMENT] = self.config_entry.data[CONF_UNIT_OF_MEASUREMENT]
-
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, data=user_input, options=self.config_entry.options
-            )
-            return self.async_create_entry(title="Config", data=user_input)
-
         options_schema = vol.Schema({
             vol.Optional(
-                ADDITIONAL_COSTS_BUY,
-                description='Additional costs when buying',
-                default=self.config_entry.data.get(ADDITIONAL_COSTS_BUY, ''),
+                ADDITIONAL_COSTS_BUY_ELECTRICITY,
+                description='Additional costs when buying electricity',
+                default=self.config_entry.options.get(ADDITIONAL_COSTS_BUY_ELECTRICITY, ''),
             ): TemplateSelector(),
             vol.Optional(
-                CHEAPEST_CONSECUTIVE_HOURS_BUY,
-                description='Hours of cheapest consecutive prices for buying',
-                default=self.config_entry.data.get(CHEAPEST_CONSECUTIVE_HOURS_BUY, ''),
-            ): str,
+                ADDITIONAL_COSTS_SELL_ELECTRICITY,
+                description='Additional costs when selling electricity',
+                default=self.config_entry.options.get(ADDITIONAL_COSTS_SELL_ELECTRICITY, ''),
+            ): TemplateSelector(),
             vol.Optional(
-                ADDITIONAL_COSTS_SELL,
-                description='Additional costs when selling',
-                default=self.config_entry.data.get(ADDITIONAL_COSTS_SELL, ''),
+                ADDITIONAL_COSTS_BUY_GAS,
+                description='Additional costs when buying gas',
+                default=self.config_entry.options.get(ADDITIONAL_COSTS_BUY_GAS, ''),
             ): TemplateSelector(),
         })
+
+        errors = {}
+        if user_input is not None:
+            additional_costs_buy_electricity = user_input.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or ''
+            if additional_costs_buy_electricity:
+                template = Template(additional_costs_buy_electricity)
+                try:
+                    template.ensure_valid()
+                except TemplateError:
+                    errors[ADDITIONAL_COSTS_BUY_ELECTRICITY] = 'invalid_template'
+
+            additional_costs_sell_electricity = user_input.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or ''
+            if additional_costs_sell_electricity:
+                template = Template(additional_costs_sell_electricity)
+                try:
+                    template.ensure_valid()
+                except TemplateError:
+                    errors[ADDITIONAL_COSTS_SELL_ELECTRICITY] = 'invalid_template'
+
+            additional_costs_buy_gas = user_input.get(ADDITIONAL_COSTS_BUY_GAS) or ''
+            if additional_costs_buy_gas:
+                template = Template(additional_costs_buy_gas)
+                try:
+                    template.ensure_valid()
+                except TemplateError:
+                    errors[ADDITIONAL_COSTS_BUY_GAS] = 'invalid_template'
+
+            if not errors:
+                return self.async_create_entry(title="", data=user_input)
+
         return self.async_show_form(
             step_id="init",
             data_schema=options_schema,
