@@ -131,6 +131,11 @@ This is useful for example if you want to turn on your water heater in the after
      {# Get value for that hour #}
      {% set value = states.sensor.current_spot_electricity_hour_order.attributes.get(hour_dt.isoformat()) %}
 
+     {# Skip if not found #}
+     {% if value is not defined %}
+       {% break %}
+     {% endif %}
+
      {# value is tuple (order, price), we'll use the price #}
      {% set price = value[1] %}
 
