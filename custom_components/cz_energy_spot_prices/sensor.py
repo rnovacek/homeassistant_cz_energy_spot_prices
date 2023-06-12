@@ -457,7 +457,6 @@ class TemplatePriceSensor(PriceSensor):
 
     def get_current_price(self, rate_data: SpotRateData) -> float:
         if self._resource == 'gas':
-            print('GAS TODAY', rate_data.gas.today, self.template)
             return float(rate_data.gas.today)
         return float(rate_data.electricity.current_hour.price)
 

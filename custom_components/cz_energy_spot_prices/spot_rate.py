@@ -89,9 +89,12 @@ class SpotRate:
         return QUERY_GAS.format(start=start.isoformat(), end=end.isoformat())
 
     async def _download(self, query: str) -> str:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.OTE_PUBLIC_URL, data=query) as response:
-                return await response.text()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.OTE_PUBLIC_URL, data=query) as response:
+                    return await response.text()
+        except aiohttp.ClientError as e:
+            raise OTEFault(f'Unable to download rates: {e}')
 
     async def get_electricity_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
         assert start.tzinfo, 'Timezone must be set'

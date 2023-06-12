@@ -178,6 +178,9 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         self._spot_rate = spot_rate
         self._in_eur = in_eur
         self._unit: SpotRate.EnergyUnit = unit
+        self._retry_attempt = 0
+        # Delays in seconds, total needs to be less than 3600 (one hour) as the `on_schedule` is scheduled once an hour
+        self._retry_attempt_delays = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
 
         # TODO: do we need to unschedule it?
         self._unschedule = event.async_track_utc_time_change(hass, self.on_schedule, minute=0, second=0)
@@ -204,10 +207,22 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
                     self._spot_rate.get_electricity_rates(now, in_eur=self._in_eur, unit=self._unit),
                     self._spot_rate.get_gas_rates(now, in_eur=self._in_eur, unit=self._unit),
                 )
+                self._retry_attempt = 0
                 return SpotRateData(
                     electricity=HourlySpotRateData(electricity_rates, zoneinfo),
                     gas=DailySpotRateData(gas_rates, zoneinfo=zoneinfo),
                 )
 
-        except OTEFault as err:
+        except (OTEFault, TimeoutError) as err:
+            try:
+                delay = self._retry_attempt_delays[self._retry_attempt]
+            except IndexError:
+                delay = None
+
+            self._retry_attempt += 1
+            if delay is not None:
+                logger.exception('OTE requests failed %d times, retrying in %d seconds', self._retry_attempt, delay)
+                event.async_call_later(self.hass, delay=delay, action=self.on_schedule)
+            else:
+                logger.exception('OTE requests failed %d times, not retrying', self._retry_attempt)
             raise UpdateFailed(f"Error communicating with API: {err}")
