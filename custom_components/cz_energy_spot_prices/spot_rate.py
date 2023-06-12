@@ -100,7 +100,7 @@ class SpotRate:
         # From yesterday (as we need it for longest consecutive) till tomorrow (we won't have more data anyway)
         query = self.get_electricity_query(first_day - timedelta(days=1), first_day + timedelta(days=1), in_eur=in_eur)
 
-        return await self._get_rates(query, unit)
+        return await self._get_rates(query, unit, has_hours=True)
 
     async def get_gas_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
         assert start.tzinfo, 'Timezone must be set'
@@ -109,7 +109,7 @@ class SpotRate:
         # today and tomorrow
         query = self.get_gas_query(first_day, first_day + timedelta(days=1))
 
-        rates_task = self._get_rates(query, unit)
+        rates_task = self._get_rates(query, unit, has_hours=False)
         if not in_eur:
             cnb_rate = CnbRate()
             rates, currency_rates = await asyncio.gather(
@@ -126,7 +126,7 @@ class SpotRate:
 
         return rates
 
-    async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh']) -> RateByDatetime:
+    async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh'], has_hours: bool = True) -> RateByDatetime:
         text = await self._download(query)
         root = ET.fromstring(text)
 
@@ -147,12 +147,16 @@ class SpotRate:
                 raise InvalidFormat('Item has no "Date" child or is empty')
             current_date = date.fromisoformat(date_el.text)
 
-            hour_el = item.find('{http://www.ote-cr.cz/schema/service/public}Hour')
-            if hour_el is None or hour_el.text is None:
-                current_hour = 0
-                logger.warning('Item has no "Hour" child or is empty: %s', current_date)
+            # Gas rates doesn't have hours, skip it
+            if has_hours:
+                hour_el = item.find('{http://www.ote-cr.cz/schema/service/public}Hour')
+                if hour_el is None or hour_el.text is None:
+                    current_hour = 0
+                    logger.warning('Item has no "Hour" child or is empty: %s', current_date)
+                else:
+                    current_hour = int(hour_el.text) - 1  # Minus 1 because OTE reports nth hour (starting with 1st) - "1" for 0:00 - 1:00
             else:
-                current_hour = int(hour_el.text) - 1  # Minus 1 because OTE reports nth hour (starting with 1st) - "1" for 0:00 - 1:00
+                current_hour = 0
 
             price_el = item.find('{http://www.ote-cr.cz/schema/service/public}Price')
             if price_el is None or price_el.text is None:
