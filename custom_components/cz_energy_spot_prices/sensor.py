@@ -290,7 +290,7 @@ class HourFindSensor(PriceSensor):
         self._available = True
         if self._value is None:
             logger.debug('%s initialized with %.2f at %s', self.unique_id, hour.price, hour.dt_utc.isoformat())
-        elif hour.price != self._value:
+        elif round(hour.price or 0, 2) != round(self._value, 2):
             logger.debug('%s updated from %.2f to %.2f at %s', self.unique_id, self._value, hour.price, hour.dt_utc.isoformat())
         else:
             logger.debug('%s unchanged with %.2f at %s', self.unique_id, hour.price, hour.dt_utc.isoformat())
