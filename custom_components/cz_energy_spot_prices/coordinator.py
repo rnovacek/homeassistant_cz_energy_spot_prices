@@ -1,9 +1,10 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Dict, Union, Optional
+import random
 
 import async_timeout
 
@@ -136,18 +137,27 @@ class HourlySpotRateData:
 class DailySpotRateData:
     def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo) -> None:
         self.now = get_now(zoneinfo)
+        today = self.now.date()
 
-        midnight_today = self.now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-        tomorrow = self.now + timedelta(days=1)
-        midnight_tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+        midnight_today = datetime.combine(date=today, time=time(hour=0), tzinfo=zoneinfo).astimezone(timezone.utc)
+        tomorrow = today + timedelta(days=1)
+        midnight_tomorrow = datetime.combine(date=tomorrow, time=time(hour=0), tzinfo=zoneinfo).astimezone(timezone.utc)
+        yesterday = today - timedelta(days=1)
+        midnight_yesterday = datetime.combine(date=yesterday, time=time(hour=0), tzinfo=zoneinfo).astimezone(timezone.utc)
 
-        self._today = rates[midnight_today]
         # It's 0 when there are no data, we want None
+        self._yesteday = rates.get(midnight_yesterday, None) or None
+        self._today = rates.get(midnight_today, None) or None
         self._tomorrow = rates.get(midnight_tomorrow, None) or None
+
 
     @property
     def today(self) -> Decimal:
-        return self._today
+        # When there are no data for today, we want to use yesterday's rate
+        value = self._today or self._yesteday
+        if value is None:
+            raise LookupError('No data for today or yesterday')
+        return value
 
     @property
     def tomorrow(self) -> Optional[Decimal]:
@@ -178,6 +188,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         self._spot_rate = spot_rate
         self._in_eur = in_eur
         self._unit: SpotRate.EnergyUnit = unit
+        self._spot_rate_data = None
         self._retry_attempt = 0
         # Delays in seconds, total needs to be less than 3600 (one hour) as the `on_schedule` is scheduled once an hour
         self._retry_attempt_delays = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
@@ -189,6 +200,48 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
     def on_schedule(self, dt):
         self.hass.async_create_task(self.async_refresh())
 
+    async def fetch_data(self):
+        logger.debug('SpotRateCoordinator.fetch_data')
+
+        zoneinfo = ZoneInfo(self.hass.config.time_zone)
+        now = datetime.now(zoneinfo)
+
+        async with async_timeout.timeout(10):
+            electricity_rates, gas_rates = await asyncio.gather(
+                self._spot_rate.get_electricity_rates(now, in_eur=self._in_eur, unit=self._unit),
+                self._spot_rate.get_gas_rates(now, in_eur=self._in_eur, unit=self._unit),
+            )
+            self._retry_attempt = 0
+            return SpotRateData(
+                electricity=HourlySpotRateData(electricity_rates, zoneinfo),
+                gas=DailySpotRateData(gas_rates, zoneinfo=zoneinfo),
+            )
+
+    def retry_maybe(self):
+        try:
+            delay = self._retry_attempt_delays[self._retry_attempt]
+        except IndexError:
+            delay = None
+
+        self._retry_attempt += 1
+        if delay is not None:
+            logger.exception('OTE request failed %d times, retrying in %d seconds', self._retry_attempt, delay)
+            event.async_call_later(self.hass, delay=delay, action=self.update_data)
+        else:
+            logger.exception('OTE request failed %d times, not retrying', self._retry_attempt)
+
+    async def update_data(self, dt):
+        logger.debug('SpotRateCoordinator.update_data %s', dt)
+        try:
+            self._spot_rate_data = await self.fetch_data()
+            self.async_set_updated_data(self._spot_rate_data)
+
+        except OTEFault:
+            self.retry_maybe()
+
+        except Exception:
+            logger.exception('OTE request failed unexpectedly, not retrying')
+
     async def _async_update_data(self):
         """Fetch data from API endpoint.
 
@@ -196,33 +249,21 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         so entities can quickly look up their data.
         """
         logger.debug('SpotRateCoordinator._async_update_data')
-        zoneinfo = ZoneInfo(self.hass.config.time_zone)
-        now = datetime.now(zoneinfo)
 
-        try:
-            # Note: asyncio.TimeoutError and aiohttp.ClientError are already
-            # handled by the data update coordinator.
-            async with async_timeout.timeout(10):
-                electricity_rates, gas_rates = await asyncio.gather(
-                    self._spot_rate.get_electricity_rates(now, in_eur=self._in_eur, unit=self._unit),
-                    self._spot_rate.get_gas_rates(now, in_eur=self._in_eur, unit=self._unit),
-                )
-                self._retry_attempt = 0
-                return SpotRateData(
-                    electricity=HourlySpotRateData(electricity_rates, zoneinfo),
-                    gas=DailySpotRateData(gas_rates, zoneinfo=zoneinfo),
-                )
-
-        except (OTEFault, TimeoutError) as err:
+        delay = 0
+        if self._spot_rate_data:
+            # We have some data, schedule update after a random delay to avoid all
+            # users hitting the API at the same time, max delay is 2 minutes
+            delay = random.randint(5, 120)
+            event.async_call_later(self.hass, delay=delay, action=self.update_data)
+            logger.debug(f'SpotRateCoordinator.update_data scheduled in {delay} seconds')
+        else:
             try:
-                delay = self._retry_attempt_delays[self._retry_attempt]
-            except IndexError:
-                delay = None
+                self._spot_rate_data = await self.fetch_data()
+                logger.debug('SpotRateCoordinator._async_update_data fetched data: %s', self._spot_rate_data)
+            except OTEFault:
+                self.retry_maybe()
+            except Exception:
+                logger.exception('OTE request failed unexpectedly during intial load')
 
-            self._retry_attempt += 1
-            if delay is not None:
-                logger.exception('OTE requests failed %d times, retrying in %d seconds', self._retry_attempt, delay)
-                event.async_call_later(self.hass, delay=delay, action=self.on_schedule)
-            else:
-                logger.exception('OTE requests failed %d times, not retrying', self._retry_attempt)
-            raise UpdateFailed(f"Error communicating with API: {err}")
+        return self._spot_rate_data
