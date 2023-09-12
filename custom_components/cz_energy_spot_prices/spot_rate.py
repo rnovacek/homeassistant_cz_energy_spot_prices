@@ -109,8 +109,8 @@ class SpotRate:
         assert start.tzinfo, 'Timezone must be set'
         start_tz = start.astimezone(self.timezone)
         first_day = start_tz.date()
-        # today and tomorrow
-        query = self.get_gas_query(first_day, first_day + timedelta(days=1))
+        # yesteday, today and tomorrow (yesterday as we might not have today data for some time)
+        query = self.get_gas_query(first_day - timedelta(days=1), first_day + timedelta(days=1))
 
         rates_task = self._get_rates(query, unit, has_hours=False)
         if not in_eur:
