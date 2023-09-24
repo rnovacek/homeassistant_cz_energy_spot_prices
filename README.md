@@ -180,3 +180,8 @@ action:
     enabled: true
 mode: single
 ```
+
+## License
+
+This integration is under [Apache 2.0 License](./LICENSE.txt), the same license as Home Assistant itself.
+
