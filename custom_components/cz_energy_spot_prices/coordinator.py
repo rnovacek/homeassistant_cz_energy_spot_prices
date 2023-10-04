@@ -217,7 +217,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
                 gas=DailySpotRateData(gas_rates, zoneinfo=zoneinfo),
             )
 
-    def retry_maybe(self):
+    def retry_maybe(self, exc_info: Exception | None=None):
         try:
             delay = self._retry_attempt_delays[self._retry_attempt]
         except IndexError:
@@ -225,10 +225,10 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
 
         self._retry_attempt += 1
         if delay is not None:
-            logger.exception('OTE request failed %d times, retrying in %d seconds', self._retry_attempt, delay)
+            logger.error('OTE request failed %d times, retrying in %d seconds', self._retry_attempt, delay, exc_info=exc_info)
             event.async_call_later(self.hass, delay=delay, action=self.update_data)
         else:
-            logger.exception('OTE request failed %d times, not retrying', self._retry_attempt)
+            logger.error('OTE request failed %d times, not retrying', self._retry_attempt, exc_info=exc_info)
 
     async def update_data(self, dt):
         logger.debug('SpotRateCoordinator.update_data %s', dt)
@@ -236,8 +236,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
             self._spot_rate_data = await self.fetch_data()
             self.async_set_updated_data(self._spot_rate_data)
 
-        except OTEFault:
-            self.retry_maybe()
+        except (OTEFault, asyncio.TimeoutError) as e:
+            self.retry_maybe(exc_info=e)
 
         except Exception:
             logger.exception('OTE request failed unexpectedly, not retrying')
@@ -261,8 +261,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
             try:
                 self._spot_rate_data = await self.fetch_data()
                 logger.debug('SpotRateCoordinator._async_update_data fetched data: %s', self._spot_rate_data)
-            except OTEFault:
-                self.retry_maybe()
+            except (OTEFault, asyncio.TimeoutError) as e:
+                self.retry_maybe(exc_info=e)
             except Exception:
                 logger.exception('OTE request failed unexpectedly during intial load')
 
