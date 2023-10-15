@@ -163,7 +163,7 @@ class SpotRate:
 
             price_el = item.find('{http://www.ote-cr.cz/schema/service/public}Price')
             if price_el is None or price_el.text is None:
-                logger.warning('Item has no "Price" child or is empty: %s', current_date)
+                logger.info('Item has no "Price" child or is empty: %s', current_date)
                 continue
             current_price = Decimal(price_el.text)
 
