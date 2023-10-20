@@ -224,7 +224,7 @@ class PriceSensor(SpotRateSensorBase, SensorEntity):
 
     @property
     def device_class(self) -> Optional[str]:
-        return 'monetary'
+        return None
 
 
 class SpotRateElectricitySensor(PriceSensor):
