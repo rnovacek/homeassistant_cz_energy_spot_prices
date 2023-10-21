@@ -1,0 +1,29 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Konfigurácia pre spotové ceny",
+                "data": {
+                    "currency": "Mena",
+                    "unit_of_measurement": "Jednotka energie"
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "additional_costs_buy_electricity": "Cena elektriny pri nákupe",
+                    "additional_costs_sell_electricity": "Cena elektriny pri predaji",
+                    "additional_costs_buy_gas": "Cena plynu pri nákupe"
+                },
+                "data_description": {
+                    "additional_costs_buy_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktualnej spotovej ceny. Napríklad pre pridanie 20 percent DPH použite `'{{ value * 1.20 }}`.",
+                    "additional_costs_sell_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktualnej spotovej ceny. Napríklad pre pridanie fixného poplatku operátora vo výške 0.25 použite `'{{ value - 0.25 }}`.",
+                    "additional_costs_buy_gas": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktuálnej spotovej ceny."
+                }
+            }
+        }
+    }
+}
