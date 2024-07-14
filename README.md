@@ -6,6 +6,10 @@ Home Assistant integration that provides current Czech electricity spot prices b
 
 You can select an energy unit between kWh and MWh when configuring the integration. OTE prices are in EUR, but you can also select to use CZK (Czech Koruna) as a currency for displayed prices (based on ČNB rate for given day).
 
+### Important note
+
+OTE (Czech market operator) uses hourly prices indexed from 1, so `1` (first hour of a day) means 0:00 - 1:00. It does NOT mean 1:00 - 2:00 as one might expect. Please keep this in mind when comparing prices reported by this integration with other sources (OTE, your electricity provider/distributor).
+
 ## Installation
 
 1. Copy `custom_components/cz_energy_spot_prices` directory into your `custom_components` in your configuration directory.
