@@ -206,7 +206,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         zoneinfo = ZoneInfo(self.hass.config.time_zone)
         now = datetime.now(zoneinfo)
 
-        async with async_timeout.timeout(10):
+        async with async_timeout.timeout(30):
             electricity_rates, gas_rates = await asyncio.gather(
                 self._spot_rate.get_electricity_rates(now, in_eur=self._in_eur, unit=self._unit),
                 self._spot_rate.get_gas_rates(now, in_eur=self._in_eur, unit=self._unit),
