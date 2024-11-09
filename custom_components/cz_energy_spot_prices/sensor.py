@@ -4,29 +4,20 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Literal
 from decimal import Decimal
 from zoneinfo import ZoneInfo
-from dataclasses import dataclass
 
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template, TemplateError
 
 from . import SpotRateConfigEntry
 from .const import ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
 from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS
+from .binary_sensor import BinarySpotRateSensorBase
+from .spot_rate_mixin import SpotRateSensorMixin
+from .spot_rate_settings import SpotRateSettings
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Settings:
-    currency: str
-    currency_human: str
-    unit: str
-    timezone: str
-    zoneinfo: ZoneInfo
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, async_add_entities):
@@ -36,7 +27,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
     currency = entry.data[CONF_CURRENCY]
     unit = entry.data[CONF_UNIT_OF_MEASUREMENT]
 
-    settings = Settings(
+    settings = SpotRateSettings(
         currency=currency,
         unit=unit,
         currency_human={
@@ -166,47 +157,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
     async_add_entities(sensors)
 
     await coordinator.async_config_entry_first_refresh()
-
-
-class SpotRateSensorMixin(CoordinatorEntity):
-    coordinator: SpotRateCoordinator
-
-    def __init__(self, hass: HomeAssistant, settings: Settings, coordinator: SpotRateCoordinator):
-        super().__init__(coordinator)
-        self.hass = hass
-        self._settings = settings
-
-        self._value = None
-        self._attr = None
-        self._available = False
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self.update(self.coordinator.data)
-        self.async_write_ha_state()
-
-    def update(self, rates_by_datetime: SpotRateData):
-        raise NotImplementedError()
-
-    @property
-    def native_value(self):
-        """Return the native value of the sensor."""
-        return self._value
-
-    @property
-    def extra_state_attributes(self):
-        """Return other attributes of the sensor."""
-        return self._attr
-
-    @property
-    def available(self):
-        """Return True if entity is available."""
-        return self._available
-
-
-class BinarySpotRateSensorBase(SpotRateSensorMixin, BinarySensorEntity):
-    pass
 
 
 class SpotRateSensorBase(SpotRateSensorMixin, SensorEntity):
@@ -446,7 +396,7 @@ class TomorrowElectricityHourOrder(EnergyHourOrder):
 
 
 class TemplatePriceSensor(PriceSensor):
-    def __init__(self, hass: HomeAssistant, resource: Literal['electricity', 'gas'], settings: Settings, coordinator: SpotRateCoordinator, template_code: str) -> None:
+    def __init__(self, hass: HomeAssistant, resource: Literal['electricity', 'gas'], settings: SpotRateSettings, coordinator: SpotRateCoordinator, template_code: str) -> None:
         super().__init__(hass, settings, coordinator)
         self._resource = resource
         try:
@@ -528,9 +478,9 @@ class GasPriceBuy(TemplatePriceSensor):
     def name(self):
         return f'Current Spot Gas Buy Price'
 
-
+#BC
 class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
-    def __init__(self, hours: int, hass: HomeAssistant, settings: Settings, coordinator: SpotRateCoordinator) -> None:
+    def __init__(self, hours: int, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator) -> None:
         self.hours = hours
         super().__init__(hass=hass, settings=settings, coordinator=coordinator)
 
@@ -549,9 +499,9 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
     def name(self):
         """Return the name of the sensor."""
         if self.hours == 1:
-            return f'Spot Electricity Is Cheapest'
+            return f'Spot Electricity Is Cheapest (Deprecated)'
         else:
-            return f'Spot Electricity Is Cheapest {self.hours} Hours Block'
+            return f'Spot Electricity Is Cheapest {self.hours} Hours Block (Deprecated)'
 
     def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
         dt = start
@@ -609,7 +559,7 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
             self._attr_is_on = is_on
             self._available = True
 
-
+#BC
 class HasTomorrowElectricityData(BinarySpotRateSensorBase):
     @property
     def icon(self) -> str:
@@ -622,7 +572,7 @@ class HasTomorrowElectricityData(BinarySpotRateSensorBase):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Spot Electricity Has Tomorrow Data'
+        return f'Spot Electricity Has Tomorrow Data (Deprecated)'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -678,6 +628,7 @@ class TomorrowGasSensor(PriceSensor):
         self._available = self._value is not None
 
 
+#BC
 class HasTomorrowGasData(BinarySpotRateSensorBase):
     @property
     def icon(self) -> str:
@@ -690,7 +641,7 @@ class HasTomorrowGasData(BinarySpotRateSensorBase):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f'Spot Gas Has Tomorrow Data'
+        return f'Spot Gas Has Tomorrow Data (Deprecated)'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}

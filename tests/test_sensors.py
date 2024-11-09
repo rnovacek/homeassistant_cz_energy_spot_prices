@@ -9,10 +9,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.cz_energy_spot_prices.sensor import (
-    SpotRateElectricitySensor, CurrentElectricityHourOrder, Settings, SpotRate, SpotRateCoordinator,
+    SpotRateElectricitySensor, CurrentElectricityHourOrder, SpotRateCoordinator,
     ConsecutiveCheapestElectricitySensor, TodayGasSensor, TomorrowGasSensor,
 )
 from custom_components.cz_energy_spot_prices.spot_rate import SpotRate
+from custom_components.cz_energy_spot_prices.spot_rate_settings import SpotRateSettings
 from custom_components.cz_energy_spot_prices import coordinator
 from homeassistant.core import HomeAssistant
 
@@ -65,7 +66,7 @@ class TestSensorBase:
         self.resource = resource
         self.timezone = 'Europe/Prague'
         self.hass = hass
-        self.settings = Settings(
+        self.settings = SpotRateSettings(
             currency=currency,
             unit=unit,
             currency_human={

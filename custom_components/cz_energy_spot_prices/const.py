@@ -2,7 +2,10 @@ from homeassistant.const import Platform
 
 DOMAIN = "cz_energy_spot_prices"
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [
+	Platform.BINARY_SENSOR,
+	Platform.SENSOR,
+]
 
 
 ADDITIONAL_COSTS_BUY_ELECTRICITY = 'additional_costs_buy_electricity'
