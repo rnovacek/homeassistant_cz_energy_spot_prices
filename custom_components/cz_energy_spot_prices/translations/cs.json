@@ -25,5 +25,71 @@
                 }
             }
         }
+    },
+    "entity": {
+        "binary_sensor": {
+            "current_spot_electricity_is_cheapest": {
+                "name": "Aktuální spotová cena elektřiny je nejlevnější"
+            },
+            "current_spot_electricity_is_cheapest_hours_block": {
+                "name": "Aktuální blok {hours} hodin spotových cen elektřiny je nejlevnější"
+            },
+            "tomorrow_spot_electricity_has_data": {
+                "name": "K dispozici zítřejší spotové ceny elektřiny"
+            },
+            "tomorrow_spot_gas_has_data": {
+                "name": "K dispozici zítřejší spotové ceny plynu"
+            }
+        },
+        "sensor": {
+            "current_spot_electricity_price": {
+                "name": "Aktuální spotová cena elektřiny"
+            },
+            "current_spot_electricity_buy_price": {
+                "name": "Aktuální nákupní spotová cena elektřiny"
+            },
+            "current_spot_electricity_sell_price": {
+                "name": "Aktuální prodejní spotová cena elektřiny"
+            },
+            "current_spot_electricity_hour_order": {
+                "name": "Pořadí aktuální hodiny spotových cen elektřiny"
+            },
+            "current_spot_electricity_is_cheapest": {
+                "name": "Aktuální spotová cena elektřiny je nejlevnější (Zastaralé)"
+            },
+            "current_spot_electricity_is_cheapest_hours_block": {
+                "name": "Aktuální blok {hours} hodin spotových cen elektřiny je nejlevnější (Zastaralé)"
+            },
+            "today_spot_electricity_cheapest": {
+                "name": "Dnešní nejlevnější spotová cena elektřiny"
+            },
+            "today_spot_electricity_most_expensive": {
+                "name": "Dnešní nejdražší spotová cena elektřiny"
+            },
+            "tomorrow_spot_electricity_cheapest": {
+                "name": "Zítřejší nejlevnější spotová cena elektřiny"
+            },
+            "tomorrow_spot_electricity_most_expensive": {
+                "name": "Zítřejší nejdražší spotová cena elektřiny"
+            },
+            "tomorrow_spot_electricity_has_data": {
+                "name": "K dispozici zítřejší spotové ceny elektřiny (Zastaralé)"
+            },
+            "tomorrow_spot_electricity_hour_order": {
+                "name": "Pořadí zítřejších hodin spotových cen elektřiny"
+            },
+            "current_spot_gas_price": {
+                "name": "Aktuální spotová cena plynu"
+            },
+            "current_spot_gas_buy_price": {
+                "name": "Aktuální nákupní spotová cena plynu"
+            },
+            "tomorrow_spot_gas_price": {
+                "name": "Zítřejší spotová cena plynu"
+            },
+            "tomorrow_spot_gas_has_data": {
+                "name": "K dispozici zítřejší spotové ceny plynu (Zastaralé)"
+            }
+        }
     }
 }
