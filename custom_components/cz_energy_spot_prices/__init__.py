@@ -33,6 +33,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
         unit=config_entry.data[CONF_UNIT_OF_MEASUREMENT],
     )
 
+    await coordinator.async_config_entry_first_refresh()
+
     config_entry.runtime_data = coordinator
     config_entry.async_on_unload(config_entry.add_update_listener(options_update_listener))
 

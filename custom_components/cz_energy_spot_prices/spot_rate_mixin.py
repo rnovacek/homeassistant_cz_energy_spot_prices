@@ -23,11 +23,13 @@ class SpotRateSensorMixin(CoordinatorEntity):
         self._attr = None
         self._available = False
 
+        self.update(self.coordinator.data)
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self.update(self.coordinator.data)
-        self.async_write_ha_state()
+        super()._handle_coordinator_update()
 
     def update(self, rates_by_datetime: SpotRateData):
         raise NotImplementedError()
