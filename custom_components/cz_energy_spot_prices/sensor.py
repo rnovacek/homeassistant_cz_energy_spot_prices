@@ -10,11 +10,11 @@ from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.template import Template, TemplateError
 
-from .const import DOMAIN, ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
+from . import SpotRateConfigEntry
+from .const import ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
 from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS
 
 logger = logging.getLogger(__name__)
@@ -29,10 +29,10 @@ class Settings:
     zoneinfo: ZoneInfo
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, async_add_entities):
     logger.info('async_setup_entry %s, data: [%s] options: [%s]', entry.unique_id, entry.data, entry.options)
 
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     currency = entry.data[CONF_CURRENCY]
     unit = entry.data[CONF_UNIT_OF_MEASUREMENT]
 
