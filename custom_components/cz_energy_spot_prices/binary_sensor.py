@@ -65,37 +65,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
 
     async_add_entities(sensors)
 
-    await coordinator.async_config_entry_first_refresh()
-
 
 class BinarySpotRateSensorBase(SpotRateSensorMixin, BinarySensorEntity):
     pass
 
 
 class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
+    _attr_icon = 'mdi:cash-clock'
+
     def __init__(self, hours: int, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator) -> None:
         self.hours = hours
 
         if self.hours == 1:
+            self._attr_unique_id = 'sensor.spot_electricity_is_cheapest'
             self._attr_translation_key = 'current_spot_electricity_is_cheapest'
         else:
+            self._attr_unique_id = f'sensor.spot_electricity_is_cheapest_{self.hours}_hours_block'
             self._attr_translation_key = 'current_spot_electricity_is_cheapest_hours_block'
             self._attr_translation_placeholders = {
                 'hours': self.hours,
             }
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator)
-
-    @property
-    def icon(self) -> str:
-        return 'mdi:cash-clock'
-
-    @property
-    def unique_id(self) -> str:
-        if self.hours == 1:
-            return f'sensor.spot_electricity_is_cheapest'
-        else:
-            return f'sensor.spot_electricity_is_cheapest_{self.hours}_hours_block'
 
     def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
         dt = start
@@ -155,15 +146,9 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
 
 
 class HasTomorrowElectricityData(BinarySpotRateSensorBase):
+    _attr_unique_id = 'sensor.spot_electricity_has_tomorrow_data'
     _attr_translation_key = 'tomorrow_spot_electricity_has_data'
-
-    @property
-    def icon(self) -> str:
-        return 'mdi:cash-clock'
-
-    @property
-    def unique_id(self) -> str:
-        return f'sensor.spot_electricity_has_tomorrow_data'
+    _attr_icon = 'mdi:cash-clock'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -178,15 +163,9 @@ class HasTomorrowElectricityData(BinarySpotRateSensorBase):
 
 
 class HasTomorrowGasData(BinarySpotRateSensorBase):
+    _attr_unique_id = 'sensor.spot_gas_has_tomorrow_data'
     _attr_translation_key = 'tomorrow_spot_gas_has_data'
-
-    @property
-    def icon(self) -> str:
-        return 'mdi:cash-clock'
-
-    @property
-    def unique_id(self) -> str:
-        return f'sensor.spot_gas_has_tomorrow_data'
+    _attr_icon = 'mdi:cash-clock'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
