@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class SpotRateSensorMixin(CoordinatorEntity):
+    _attr_has_entity_name = True
+
     coordinator: SpotRateCoordinator
 
     def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator):

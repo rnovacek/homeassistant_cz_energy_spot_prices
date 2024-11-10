@@ -164,6 +164,8 @@ class SpotRateSensorBase(SpotRateSensorMixin, SensorEntity):
 
 
 class PriceSensor(SpotRateSensorBase, SensorEntity):
+    _attr_has_entity_name = True
+
     @property
     def icon(self) -> str:
         return 'mdi:cash'
@@ -178,14 +180,11 @@ class PriceSensor(SpotRateSensorBase, SensorEntity):
 
 
 class SpotRateElectricitySensor(PriceSensor):
+    _attr_translation_key = 'current_spot_electricity_price'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_price'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Current Spot Electricity Price'
 
     def update(self, rate_data: Optional[SpotRateData]):
         attributes: Dict[str, float] = {}
@@ -253,14 +252,11 @@ class HourFindSensor(PriceSensor):
 
 
 class CheapestTodayElectricitySensor(HourFindSensor):
+    _attr_translation_key = 'today_spot_electricity_cheapest'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_cheapest_today'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Spot Cheapest Electricity Today'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
@@ -270,14 +266,11 @@ class CheapestTodayElectricitySensor(HourFindSensor):
 
 
 class CheapestTomorrowElectricitySensor(HourFindSensor):
+    _attr_translation_key = 'tomorrow_spot_electricity_cheapest'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_cheapest_tomorrow'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Spot Cheapest Electricity Tomorrow'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
@@ -290,14 +283,11 @@ class CheapestTomorrowElectricitySensor(HourFindSensor):
 
 
 class MostExpensiveTodayElectricitySensor(HourFindSensor):
+    _attr_translation_key = 'today_spot_electricity_most_expensive'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_most_expensive_today'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Spot Most Expensive Electricity Today'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
@@ -307,14 +297,11 @@ class MostExpensiveTodayElectricitySensor(HourFindSensor):
 
 
 class MostExpensiveTomorrowElectricitySensor(HourFindSensor):
+    _attr_translation_key = 'tomorrow_spot_electricity_most_expensive'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_most_expensive_tomorrow'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Spot Most Expensive Electricity Tomorrow'
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
@@ -341,14 +328,11 @@ class EnergyHourOrder(SpotRateSensorBase):
 
 
 class CurrentElectricityHourOrder(EnergyHourOrder):
+    _attr_translation_key = 'current_spot_electricity_hour_order'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_hour_order'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Current Spot Electricity Hour Order'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -371,14 +355,11 @@ class CurrentElectricityHourOrder(EnergyHourOrder):
 
 
 class TomorrowElectricityHourOrder(EnergyHourOrder):
+    _attr_translation_key = 'tomorrow_spot_electricity_hour_order'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.tomorrow_spot_electricity_hour_order'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Tomorrow Spot Electricity Hour Order'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -438,6 +419,8 @@ class TemplatePriceSensor(PriceSensor):
 
 
 class ElectricityPriceBuy(TemplatePriceSensor):
+    _attr_translation_key = 'current_spot_electricity_buy_price'
+
     @property
     def icon(self) -> str:
         return 'mdi:cash-minus'
@@ -446,12 +429,10 @@ class ElectricityPriceBuy(TemplatePriceSensor):
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_buy_price'
 
-    @property
-    def name(self):
-        return f'Current Spot Electricity Buy Price'
-
 
 class ElectricityPriceSell(TemplatePriceSensor):
+    _attr_translation_key = 'current_spot_electricity_sell_price'
+
     @property
     def icon(self) -> str:
         return 'mdi:cash-plus'
@@ -460,12 +441,10 @@ class ElectricityPriceSell(TemplatePriceSensor):
     def unique_id(self) -> str:
         return f'sensor.current_spot_electricity_sell_price'
 
-    @property
-    def name(self):
-        return f'Current Spot Electricity Sell Price'
-
 
 class GasPriceBuy(TemplatePriceSensor):
+    _attr_translation_key = 'current_spot_gas_buy_price'
+
     @property
     def icon(self) -> str:
         return 'mdi:cash-minus'
@@ -474,14 +453,19 @@ class GasPriceBuy(TemplatePriceSensor):
     def unique_id(self) -> str:
         return f'sensor.current_spot_gas_buy_price'
 
-    @property
-    def name(self):
-        return f'Current Spot Gas Buy Price'
-
 #BC
 class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
     def __init__(self, hours: int, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator) -> None:
         self.hours = hours
+
+        if self.hours == 1:
+            self._attr_translation_key = 'current_spot_electricity_is_cheapest'
+        else:
+            self._attr_translation_key = 'current_spot_electricity_is_cheapest_hours_block'
+            self._attr_translation_placeholders = {
+                'hours': self.hours,
+            }
+
         super().__init__(hass=hass, settings=settings, coordinator=coordinator)
 
     @property
@@ -494,14 +478,6 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
             return f'sensor.spot_electricity_is_cheapest'
         else:
             return f'sensor.spot_electricity_is_cheapest_{self.hours}_hours_block'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        if self.hours == 1:
-            return f'Spot Electricity Is Cheapest (Deprecated)'
-        else:
-            return f'Spot Electricity Is Cheapest {self.hours} Hours Block (Deprecated)'
 
     def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
         dt = start
@@ -561,6 +537,8 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
 
 #BC
 class HasTomorrowElectricityData(BinarySpotRateSensorBase):
+    _attr_translation_key = 'tomorrow_spot_electricity_has_data'
+
     @property
     def icon(self) -> str:
         return 'mdi:cash-clock'
@@ -568,11 +546,6 @@ class HasTomorrowElectricityData(BinarySpotRateSensorBase):
     @property
     def unique_id(self) -> str:
         return f'sensor.spot_electricity_has_tomorrow_data'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Spot Electricity Has Tomorrow Data (Deprecated)'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -587,14 +560,11 @@ class HasTomorrowElectricityData(BinarySpotRateSensorBase):
 
 
 class TodayGasSensor(PriceSensor):
+    _attr_translation_key = 'current_spot_gas_price'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.current_spot_gas_price'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Current Spot Gas Price'
 
     def update(self, rate_data: Optional[SpotRateData]):
         if rate_data is None:
@@ -608,14 +578,11 @@ class TodayGasSensor(PriceSensor):
 
 
 class TomorrowGasSensor(PriceSensor):
+    _attr_translation_key = 'tomorrow_spot_gas_price'
+
     @property
     def unique_id(self) -> str:
         return f'sensor.tomorrow_spot_gas_price'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Tomorrow Spot Gas Price'
 
     def update(self, rate_data: Optional[SpotRateData]):
         if rate_data is None:
@@ -630,6 +597,8 @@ class TomorrowGasSensor(PriceSensor):
 
 #BC
 class HasTomorrowGasData(BinarySpotRateSensorBase):
+    _attr_translation_key = 'tomorrow_spot_gas_has_data'
+
     @property
     def icon(self) -> str:
         return 'mdi:cash-clock'
@@ -637,11 +606,6 @@ class HasTomorrowGasData(BinarySpotRateSensorBase):
     @property
     def unique_id(self) -> str:
         return f'sensor.spot_gas_has_tomorrow_data'
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return f'Spot Gas Has Tomorrow Data (Deprecated)'
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}

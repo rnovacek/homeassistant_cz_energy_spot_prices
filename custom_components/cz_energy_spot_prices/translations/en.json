@@ -25,5 +25,71 @@
                 }
             }
         }
+    },
+    "entity": {
+        "binary_sensor": {
+            "current_spot_electricity_is_cheapest": {
+                "name": "Current Spot Electricity Is Cheapest"
+            },
+            "current_spot_electricity_is_cheapest_hours_block": {
+                "name": "Current Spot Electricity Is Cheapest {hours} Hours Block"
+            },
+            "tomorrow_spot_electricity_has_data": {
+                "name": "Tomorrow Spot Electricity Has Data"
+            },
+            "tomorrow_spot_gas_has_data": {
+                "name": "Tomorrow Spot Gas Has Data"
+            }
+        },
+        "sensor": {
+            "current_spot_electricity_price": {
+                "name": "Current Spot Electricity Price"
+            },
+            "current_spot_electricity_buy_price": {
+                "name": "Current Spot Electricity Buy Price"
+            },
+            "current_spot_electricity_sell_price": {
+                "name": "Current Spot Electricity Sell Price"
+            },
+            "current_spot_electricity_hour_order": {
+                "name": "Current Spot Electricity Hour Order"
+            },
+            "current_spot_electricity_is_cheapest": {
+                "name": "Current Spot Electricity Is Cheapest (Deprecated)"
+            },
+            "current_spot_electricity_is_cheapest_hours_block": {
+                "name": "Current Spot Electricity Is Cheapest {hours} Hours Block (Deprecated)"
+            },
+            "today_spot_electricity_cheapest": {
+                "name": "Today Spot Cheapest Electricity"
+            },
+            "today_spot_electricity_most_expensive": {
+                "name": "Today Spot Most Expensive Electricity"
+            },
+            "tomorrow_spot_electricity_cheapest": {
+                "name": "Tomorrow Spot Cheapest Electricity"
+            },
+            "tomorrow_spot_electricity_most_expensive": {
+                "name": "Tomorrow Spot Most Expensive Electricity"
+            },
+            "tomorrow_spot_electricity_has_data": {
+                "name": "Tomorrow Spot Electricity Has Data (Deprecated)"
+            },
+            "tomorrow_spot_electricity_hour_order": {
+                "name": "Tomorrow Spot Electricity Hour Order"
+            },
+            "current_spot_gas_price": {
+                "name": "Current Spot Gas Price"
+            },
+            "current_spot_gas_buy_price": {
+                "name": "Current Spot Gas Buy Price"
+            },
+            "tomorrow_spot_gas_price": {
+                "name": "Tomorrow Spot Gas Price"
+            },
+            "tomorrow_spot_gas_has_data": {
+                "name": "Tomorrow Spot Gas Has Data (Deprecated)"
+            }
+        }
     }
 }
