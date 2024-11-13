@@ -9,6 +9,7 @@ import random
 import async_timeout
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.template import Template, TemplateError
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -67,7 +68,7 @@ class SpotRateDay:
 
 
 class HourlySpotRateData:
-    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo) -> None:
+    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, rate_template: Optional[Template]) -> None:
         self.now = get_now(zoneinfo)
         self.today_date = self.now.date()
         self.tomorrow_date = self.today_date + timedelta(days=1)
@@ -79,6 +80,13 @@ class HourlySpotRateData:
 
         # Create individual SpotRateHour instances and compute statistics while doing that
         for utc_hour, rate in rates.items():
+            if rate_template is not None:
+                rate =  Decimal(
+                      rate_template.async_render({
+                        'value': float(rate),
+                        'hour': utc_hour,
+                    })
+                )
             rate_hour = SpotRateHour(utc_hour, utc_hour.astimezone(zoneinfo), rate)
             self.hours_by_dt[utc_hour] = rate_hour
 
@@ -134,8 +142,23 @@ class HourlySpotRateData:
         return self.tomorrow_day
 
 
+class HourlyTradeRateData:
+    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, buy_rate_template: Optional[Template], sell_rate_template: Optional[Template]) -> None:
+        self.spot_rates = HourlySpotRateData(rates, zoneinfo, None)
+
+        if buy_rate_template is None:
+            self.buy_rates = self.spot_rates
+        else:
+            self.buy_rates = HourlySpotRateData(rates, zoneinfo, buy_rate_template)
+
+        if sell_rate_template is None:
+            self.sell_rates = self.spot_rates
+        else:
+            self.sell_rates = HourlySpotRateData(rates, zoneinfo, sell_rate_template)
+
+
 class DailySpotRateData:
-    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo) -> None:
+    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, rate_template: Optional[Template]) -> None:
         self.now = get_now(zoneinfo)
         today = self.now.date()
 
@@ -146,10 +169,9 @@ class DailySpotRateData:
         midnight_yesterday = datetime.combine(date=yesterday, time=time(hour=0), tzinfo=zoneinfo).astimezone(timezone.utc)
 
         # It's 0 when there are no data, we want None
-        self._yesteday = rates.get(midnight_yesterday, None) or None
-        self._today = rates.get(midnight_today, None) or None
-        self._tomorrow = rates.get(midnight_tomorrow, None) or None
-
+        self._yesteday = self._get_trade_rate(rates, midnight_yesterday, rate_template) or None
+        self._today = self._get_trade_rate(rates, midnight_today, rate_template) or None
+        self._tomorrow = self._get_trade_rate(rates, midnight_tomorrow, rate_template) or None
 
     @property
     def today(self) -> Decimal:
@@ -163,9 +185,31 @@ class DailySpotRateData:
     def tomorrow(self) -> Optional[Decimal]:
         return self._tomorrow
 
+    def _get_trade_rate(self, rates: SpotRate.RateByDatetime, dt: datetime, rate_template: Optional[Template]) -> Decimal:
+        rate = rates.get(dt, None) or None
+
+        if rate is not None and rate_template is not None:
+            rate = Decimal(
+                rate_template.async_render({
+                    'value': float(rate),
+                    'day': dt,
+                })
+            )
+
+        return rate
+
+
+class DailyTradeRateData:
+    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, buy_rate_template: Optional[Template]) -> None:
+        self.spot_rates = DailySpotRateData(rates, zoneinfo, None)
+        if buy_rate_template is None:
+            self.buy_rates = self.spot_rates
+        else:
+            self.buy_rates = DailySpotRateData(rates, zoneinfo, buy_rate_template)
+
 
 class SpotRateData:
-    def __init__(self, electricity: HourlySpotRateData, gas: DailySpotRateData):
+    def __init__(self, electricity: HourlyTradeRateData, gas: DailyTradeRateData):
         self.electricity = electricity
         self.gas = gas
 
@@ -176,7 +220,7 @@ class SpotRateData:
 class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
     """My custom coordinator."""
 
-    def __init__(self, hass: HomeAssistant, spot_rate: SpotRate, in_eur: bool, unit: SpotRate.EnergyUnit):
+    def __init__(self, hass: HomeAssistant, spot_rate: SpotRate, in_eur: bool, unit: SpotRate.EnergyUnit, electricity_buy_rate_template_code: str, electricity_sell_rate_template_code: str, gas_buy_rate_template_code: str):
         """Initialize my coordinator."""
         logger.debug('SpotRateCoordinator.__init__')
         super().__init__(
@@ -192,6 +236,27 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         self._retry_attempt = 0
         # Delays in seconds, total needs to be less than 3600 (one hour) as the `on_schedule` is scheduled once an hour
         self._retry_attempt_delays = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+
+        self._electricity_buy_rate_template = None
+        if electricity_buy_rate_template_code.strip():
+            try:
+                self._electricity_buy_rate_template = Template(electricity_buy_rate_template_code, hass)
+            except TemplateError as e:
+                logger.error('Template error in %s: %s', self.unique_id, e)
+
+        self._electricity_sell_rate_template = None
+        if electricity_sell_rate_template_code.strip():
+            try:
+                self._electricity_sell_rate_template = Template(electricity_sell_rate_template_code, hass)
+            except TemplateError as e:
+                logger.error('Template error in %s: %s', self.unique_id, e)
+
+        self._gas_buy_rate_template = None
+        if gas_buy_rate_template_code.strip():
+            try:
+                self._gas_buy_rate_template = Template(gas_buy_rate_template_code, hass)
+            except TemplateError as e:
+                logger.error('Template error in %s: %s', self.unique_id, e)
 
         # TODO: do we need to unschedule it?
         self._unschedule = event.async_track_utc_time_change(hass, self.on_schedule, minute=0, second=0)
@@ -213,8 +278,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
             )
             self._retry_attempt = 0
             return SpotRateData(
-                electricity=HourlySpotRateData(electricity_rates, zoneinfo),
-                gas=DailySpotRateData(gas_rates, zoneinfo=zoneinfo),
+                electricity=HourlyTradeRateData(electricity_rates, zoneinfo, self._electricity_buy_rate_template, self._electricity_sell_rate_template),
+                gas=DailyTradeRateData(gas_rates, zoneinfo, self._gas_buy_rate_template),
             )
 
     def retry_maybe(self, exc_info: Exception | None=None):
