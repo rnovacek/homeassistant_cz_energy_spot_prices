@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 
-from .const import DOMAIN, PLATFORMS
+from .const import DOMAIN, PLATFORMS, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
 from .coordinator import SpotRateCoordinator
 from .spot_rate import SpotRate
 
@@ -31,6 +31,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
         spot_rate=spot_rate,
         in_eur=config_entry.data[CONF_CURRENCY] == 'EUR',
         unit=config_entry.data[CONF_UNIT_OF_MEASUREMENT],
+        electricity_buy_rate_template_code = config_entry.options.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or '',
+        electricity_sell_rate_template_code = config_entry.options.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or '',
+        gas_buy_rate_template_code = config_entry.options.get(ADDITIONAL_COSTS_BUY_GAS) or '',
     )
 
     await coordinator.async_config_entry_first_refresh()

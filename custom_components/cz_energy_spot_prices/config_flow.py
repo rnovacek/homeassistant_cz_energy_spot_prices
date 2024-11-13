@@ -68,17 +68,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         options_schema = vol.Schema({
             vol.Optional(
                 ADDITIONAL_COSTS_BUY_ELECTRICITY,
-                description='Additional costs when buying electricity',
                 default=self.config_entry.options.get(ADDITIONAL_COSTS_BUY_ELECTRICITY, ''),
             ): TemplateSelector(),
             vol.Optional(
                 ADDITIONAL_COSTS_SELL_ELECTRICITY,
-                description='Additional costs when selling electricity',
                 default=self.config_entry.options.get(ADDITIONAL_COSTS_SELL_ELECTRICITY, ''),
             ): TemplateSelector(),
             vol.Optional(
                 ADDITIONAL_COSTS_BUY_GAS,
-                description='Additional costs when buying gas',
                 default=self.config_entry.options.get(ADDITIONAL_COSTS_BUY_GAS, ''),
             ): TemplateSelector(),
         })
