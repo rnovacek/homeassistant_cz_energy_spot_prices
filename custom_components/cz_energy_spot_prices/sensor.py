@@ -222,7 +222,7 @@ class HourFindSensor(PriceSensor):
             self._available = False
             self._value = None
             self._attr = {}
-            logger.info('No value found for %s', self.name)
+            logger.info('No value found for %s', self.unique_id)
             return
 
         self._available = True
