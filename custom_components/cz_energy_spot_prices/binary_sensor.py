@@ -67,28 +67,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
         )
 
     if coordinator._electricity_buy_rate_template is not None:
-      for i in CONSECUTIVE_HOURS:
-          sensors.append(
-              ConsecutiveCheapestElectricitySensor(
-                  hours=i,
-                  hass=hass,
-                  settings=settings,
-                  coordinator=coordinator,
-                  trade = Trade.BUY,
-              )
-          )
+        for i in CONSECUTIVE_HOURS:
+            sensors.append(
+                ConsecutiveCheapestElectricitySensor(
+                    hours=i,
+                    hass=hass,
+                    settings=settings,
+                    coordinator=coordinator,
+                    trade = Trade.BUY,
+                )
+            )
 
     if coordinator._electricity_sell_rate_template is not None:
-      for i in CONSECUTIVE_HOURS:
-          sensors.append(
-              ConsecutiveCheapestElectricitySensor(
-                  hours=i,
-                  hass=hass,
-                  settings=settings,
-                  coordinator=coordinator,
-                  trade = Trade.SELL,
-              )
-          )
+        for i in CONSECUTIVE_HOURS:
+            sensors.append(
+                ConsecutiveCheapestElectricitySensor(
+                    hours=i,
+                    hass=hass,
+                    settings=settings,
+                    coordinator=coordinator,
+                    trade = Trade.SELL,
+                )
+            )
 
     async_add_entities(sensors)
 
