@@ -20,8 +20,8 @@
                     "additional_costs_buy_gas": "Cena plynu pri nákupe"
                 },
                 "data_description": {
-                    "additional_costs_buy_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktualnej ceny. Napríklad pre pridanie 21 percent DPH použite `'{{ value * 1.21 }}`. Môžete použiť `hour` v UTC pre spotové ceny. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený.",
-                    "additional_costs_sell_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktualnej ceny. Napríklad pre odpočítanie fixného poplatku operátora vo výške 0.25 použite `'{{ value - 0.25 }}`. Môžete použiť `hour` v UTC pre spotové ceny. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený.",
+                    "additional_costs_buy_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktualnej ceny, napríklad pre pridanie 21 percent DPH použite `'{{ value * 1.21 }}`. Použite `hour` na výpočet ceny v danej hodine, ak sa sadzba v jednotlivých hodinách líši, napríklad pre vysoký a nízky tarif. Hodnota `hour` je v UTC. Ak potrebujete lokálny čas, použite `as_local(hour)`. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený.",
+                    "additional_costs_sell_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktualnej ceny, napríklad pre odpočítanie fixného poplatku operátora vo výške 0.25 použite `'{{ value - 0.25 }}`. Použite `hour` na výpočet ceny v danej hodine, ak sa sadzba v jednotlivých hodinách líši, napríklad pre vysoký a nízky tarif. Hodnota `hour` je v UTC. Ak potrebujete lokálny čas, použite `as_local(hour)`. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený.",
                     "additional_costs_buy_gas": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` pre získanie aktuálnej ceny. Môžete použiť `day` v UTC pre spotové ceny. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený."
                 }
             }

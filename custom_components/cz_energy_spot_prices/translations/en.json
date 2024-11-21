@@ -20,8 +20,8 @@
                     "additional_costs_buy_gas": "Gas cost when buying"
                 },
                 "data_description": {
-                    "additional_costs_buy_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current price. For example, to add 21 percent VAT to the price use `'{{ value * 1.21 }}`. You can use `hour` in UTC for spot prices. If you do not enter a template, the sensor will not be created.",
-                    "additional_costs_sell_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current price. For example, to subtract fixed 0.25 operator fee use `'{{ value - 0.25 }}`. You can use `hour` in UTC for spot prices. If you do not enter a template, the sensor will not be created.",
+                    "additional_costs_buy_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current price, for example, to add 21 percent VAT to the price use `'{{ value * 1.21 }}`. Use `hour` to calculate the price for a specific hour if the rate varies by hour, such as high and low tariffs. The `hour` value is in UTC. If you need the local time, use `as_local(hour)`. If you do not enter a template, the sensor will not be created.",
+                    "additional_costs_sell_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current price, for example, to subtract fixed 0.25 operator fee use `'{{ value - 0.25 }}`. Use `hour` to calculate the price for a specific hour if the rate varies by hour, such as high and low tariffs. The `hour` value is in UTC. If you need the local time, use `as_local(hour)`. If you do not enter a template, the sensor will not be created.",
                     "additional_costs_buy_gas": "Template to calculate actual costs with additional fees. Use `value` to get current spot price. You can use `day` in UTC for spot prices. If you do not enter a template, the sensor will not be created."
                 }
             }
