@@ -297,7 +297,7 @@ class CheapestTodayElectricitySensor(HourFindSensor):
         self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_cheapest_today'
         self._attr_translation_key = f'{trade.lower()}_electricity_cheapest_today'
 
-        self.entity_id = f'sensor.{trade.lower()}_electricity_cheapest_today'
+        self.entity_id = f'sensor.{trade.lower()}_cheapest_electricity_today'
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
@@ -314,7 +314,7 @@ class CheapestTomorrowElectricitySensor(HourFindSensor):
         self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_cheapest_tomorrow'
         self._attr_translation_key = f'{trade.lower()}_electricity_cheapest_tomorrow'
 
-        self.entity_id = f'sensor.{trade.lower()}_electricity_cheapest_tomorrow'
+        self.entity_id = f'sensor.{trade.lower()}_cheapest_electricity_tomorrow'
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
@@ -334,7 +334,7 @@ class MostExpensiveTodayElectricitySensor(HourFindSensor):
         self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_most_expensive_today'
         self._attr_translation_key = f'{trade.lower()}_electricity_most_expensive_today'
 
-        self.entity_id = f'sensor.{trade.lower()}_electricity_most_expensive_today'
+        self.entity_id = f'sensor.{trade.lower()}_most_expensive_electricity_today'
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
@@ -351,7 +351,7 @@ class MostExpensiveTomorrowElectricitySensor(HourFindSensor):
         self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_most_expensive_tomorrow'
         self._attr_translation_key = f'{trade.lower()}_electricity_most_expensive_tomorrow'
 
-        self.entity_id = f'sensor.{trade.lower()}_electricity_most_expensive_tomorrow'
+        self.entity_id = f'sensor.{trade.lower()}_most_expensive_electricity_tomorrow'
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
