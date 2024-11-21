@@ -68,7 +68,7 @@
                 "name": "K dispozici zítřejší spotové ceny elektřiny (Zastaralé)"
             },
             "spot_electricity_is_cheapest": {
-                "name": "Aktuální spotová cena elektřiny je nejlevnější (Zastarallé)"
+                "name": "Aktuální spotová cena elektřiny je nejlevnější (Zastaralé)"
             },
             "spot_electricity_is_cheapest_hours_block": {
                 "name": "Aktuální blok {hours} hodin spotových cen elektřiny je nejlevnější (Zastaralé)"
