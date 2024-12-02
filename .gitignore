@@ -5,3 +5,4 @@ test_hass/custom_components
 test_hass/.HA_VERSION
 __pycache__
 .venv
+.vscode

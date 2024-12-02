@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Literal
+from typing import Dict, Optional
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -12,9 +12,9 @@ from homeassistant.helpers.template import Template, TemplateError
 
 from . import SpotRateConfigEntry
 from .const import ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
+from .binary_sensor import ElectricityBinarySpotRateSensorBase, GasBinarySpotRateSensorBase
 from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS
-from .binary_sensor import BinarySpotRateSensorBase
-from .spot_rate_mixin import SpotRateSensorMixin
+from .spot_rate_mixin import ElectricitySpotRateSensorMixin, GasSpotRateSensorMixin, Trade
 from .spot_rate_settings import SpotRateSettings
 
 logger = logging.getLogger(__name__)
@@ -39,66 +39,66 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
         zoneinfo=ZoneInfo(hass.config.time_zone),
     )
 
+    # Electricity sensors
+    sensors = __get_electricity_sensors(hass, settings, coordinator, Trade.SPOT)
+    if coordinator._electricity_buy_rate_template is not None:
+        sensors += __get_electricity_sensors(hass, settings, coordinator, Trade.BUY)
+    if coordinator._electricity_sell_rate_template is not None:
+        sensors += __get_electricity_sensors(hass, settings, coordinator, Trade.SELL)
+
+    # Gas sensors
+    sensors += __get_gas_sensors(hass, settings, coordinator, Trade.SPOT)
+    if coordinator._gas_buy_rate_template is not None:
+        sensors += __get_gas_sensors(hass, settings, coordinator, Trade.BUY)
+
+    # Deprecated sensors
+    sensors += __get_deprecated_sensors(hass, settings, coordinator)
+
+    async_add_entities(sensors)
+
+def __get_electricity_sensors(hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade):
     electricity_rate_sensor = SpotRateElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
+        trade = trade,
     )
     cheapest_today_electricity_sensor = CheapestTodayElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
+        trade = trade,
     )
     cheapest_tomorrow_electricity_sensor = CheapestTomorrowElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
+        trade = trade,
     )
     most_expensive_today_electricity_sensor = MostExpensiveTodayElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
+        trade = trade,
     )
     most_expensive_tomorrow_electricity_sensor = MostExpensiveTomorrowElectricitySensor(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
+        trade = trade,
     )
     current_electricity_hour_order = CurrentElectricityHourOrder(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
+        trade = trade,
     )
     tomorrow_electricity_hour_order = TomorrowElectricityHourOrder(
         hass=hass,
         settings=settings,
         coordinator=coordinator,
+        trade = trade,
     )
-    has_tomorrow_electricity_data = HasTomorrowElectricityData(
-        hass=hass,
-        settings=settings,
-        coordinator=coordinator,
-    )
-
-    today_gas = TodayGasSensor(
-        hass=hass,
-        settings=settings,
-        coordinator=coordinator,
-    )
-    tomorrow_gas = TomorrowGasSensor(
-        hass=hass,
-        settings=settings,
-        coordinator=coordinator,
-    )
-    has_tomorrow_gas_data = HasTomorrowGasData(
-        hass=hass,
-        settings=settings,
-        coordinator=coordinator,
-    )
-
-    additional_costs_buy_electricity = entry.options.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or ''
-    additional_costs_sell_electricity = entry.options.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or ''
-    additional_costs_buy_gas = entry.options.get(ADDITIONAL_COSTS_BUY_GAS) or ''
 
     sensors = [
         electricity_rate_sensor,
@@ -108,41 +108,73 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
         most_expensive_tomorrow_electricity_sensor,
         current_electricity_hour_order,
         tomorrow_electricity_hour_order,
-        has_tomorrow_electricity_data,
-        today_gas,
-        tomorrow_gas,
-        has_tomorrow_gas_data
     ]
 
-    if additional_costs_buy_electricity:
-        energy_price_buy_electricity_sensor = ElectricityPriceBuy(
-            hass=hass,
-            resource='electricity',
-            settings=settings,
-            coordinator=coordinator,
-            template_code=additional_costs_buy_electricity,
-        )
-        sensors.append(energy_price_buy_electricity_sensor)
+    return sensors
 
-    if additional_costs_sell_electricity:
-        energy_price_sell_electricity_sensor = ElectricityPriceSell(
-            hass=hass,
-            resource='electricity',
-            settings=settings,
-            coordinator=coordinator,
-            template_code=additional_costs_sell_electricity,
-        )
-        sensors.append(energy_price_sell_electricity_sensor)
+def __get_gas_sensors(hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade):
+    today_gas = TodayGasSensor(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+        trade = trade,
+    )
+    tomorrow_gas = TomorrowGasSensor(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+        trade = trade,
+    )
 
-    if additional_costs_buy_gas:
-        energy_price_buy_gas_sensor = GasPriceBuy(
-            hass=hass,
-            resource='gas',
-            settings=settings,
-            coordinator=coordinator,
-            template_code=additional_costs_buy_gas,
-        )
-        sensors.append(energy_price_buy_gas_sensor)
+    sensors = [
+        today_gas,
+        tomorrow_gas,
+    ]
+
+    return sensors
+
+def __get_deprecated_sensors(hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator):
+    deprecated_buy_electricity_price = SpotRateElectricitySensor(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+        trade = Trade.BUY,
+        deprecated = True,
+    )
+    deprecated_sell_electricity_price = SpotRateElectricitySensor(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+        trade = Trade.SELL,
+        deprecated = True,
+    )
+    deprecated_has_tomorrow_electricity_data = HasTomorrowElectricityData(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+        trade = Trade.SPOT,
+    )
+    deprecated_buy_gas_price = TodayGasSensor(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+        trade = Trade.BUY,
+        deprecated = True,
+    )
+    deprecated_has_tomorrow_gas_data = HasTomorrowGasData(
+        hass=hass,
+        settings=settings,
+        coordinator=coordinator,
+        trade = Trade.SPOT,
+    )
+
+    sensors = [
+        deprecated_buy_electricity_price,
+        deprecated_sell_electricity_price,
+        deprecated_has_tomorrow_electricity_data,
+        deprecated_buy_gas_price,
+        deprecated_has_tomorrow_gas_data,
+    ]
 
     for i in CONSECUTIVE_HOURS:
         sensors.append(
@@ -151,29 +183,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
                 hass=hass,
                 settings=settings,
                 coordinator=coordinator,
+                trade = Trade.SPOT,
             )
         )
 
-    async_add_entities(sensors)
+    return sensors
 
 
-class SpotRateSensorBase(SpotRateSensorMixin, SensorEntity):
+class ElectricitySpotRateSensorBase(ElectricitySpotRateSensorMixin, SensorEntity):
     pass
 
 
-class PriceSensor(SpotRateSensorBase, SensorEntity):
-    _attr_has_entity_name = True
+class ElectricityPriceSensor(ElectricitySpotRateSensorBase):
     _attr_icon = 'mdi:cash'
 
-    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator) -> None:
-        self._attr_unit_of_measurement = f'{settings.currency_human}/{settings.unit}'
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_native_unit_of_measurement = f'{settings.currency_human}/{settings.unit}'
 
-        super().__init__(hass, settings, coordinator)
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
 
-class SpotRateElectricitySensor(PriceSensor):
-    _attr_unique_id = 'sensor.current_spot_electricity_price'
-    _attr_translation_key = 'current_spot_electricity_price'
+class SpotRateElectricitySensor(ElectricityPriceSensor):
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade, deprecated: bool = False) -> None:
+        self._deprecated = deprecated
+
+        if self._deprecated:
+            self._attr_unique_id = f'sensor.current_spot_electricity_{trade.lower()}_price'
+            self._attr_translation_key = f'current_spot_electricity_{trade.lower()}_price'
+        else:
+            self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_price'
+            self._attr_translation_key = f'current_{trade.lower()}_electricity_price'
+
+        match trade:
+            case Trade.BUY:
+                self._attr_icon = 'mdi:cash-minus'
+            case Trade.SELL:
+                self._attr_icon = 'mdi:cash-plus'
+
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def update(self, rate_data: Optional[SpotRateData]):
         attributes: Dict[str, float] = {}
@@ -185,33 +234,36 @@ class SpotRateElectricitySensor(PriceSensor):
             return
 
         try:
-            current_hour = rate_data.electricity.current_hour
-            self._available = True
+            hourly_rates = self._get_trade_rates(rate_data)
+            self._value = hourly_rates.current_hour.price
         except LookupError:
             logger.error(
                 'Current time "%s" is not found in SpotRate values:\n%s',
                 rate_data.get_now(),
-                '\n\t'.join([dt.isoformat() for dt in rate_data.electricity.hour_for_dt.keys()]),
+                '\n\t'.join([dt.isoformat() for dt in hourly_rates.hour_for_dt.keys()]),
             )
             self._available = False
             return
 
-        current_value = current_hour.price
+        if self._deprecated:
+            self._attr = {}
+            self._available = True
+            return
 
-        for hour_data in rate_data.electricity.today_day.hours_by_dt.values():
+        for hour_data in hourly_rates.today_day.hours_by_dt.values():
             dt_local = hour_data.dt_local.isoformat()
             attributes[dt_local] = float(hour_data.price)
 
-        if rate_data.electricity.tomorrow_day:
-            for hour_data in rate_data.electricity.tomorrow_day.hours_by_dt.values():
+        if hourly_rates.tomorrow_day:
+            for hour_data in hourly_rates.tomorrow_day.hours_by_dt.values():
                 dt_local = hour_data.dt_local.isoformat()
                 attributes[dt_local] = float(hour_data.price)
 
         self._attr = attributes
-        self._value = current_value
+        self._available = True
 
 
-class HourFindSensor(PriceSensor):
+class HourFindSensor(ElectricityPriceSensor):
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         raise NotImplementedError()
 
@@ -241,86 +293,122 @@ class HourFindSensor(PriceSensor):
 
 
 class CheapestTodayElectricitySensor(HourFindSensor):
-    _attr_unique_id = 'sensor.current_spot_electricity_cheapest_today'
-    _attr_translation_key = 'today_spot_electricity_cheapest'
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_cheapest_today'
+        self._attr_translation_key = f'{trade.lower()}_electricity_cheapest_today'
+
+        self.entity_id = f'sensor.{trade.lower()}_cheapest_electricity_today'
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        return rate_data.electricity.today_day.cheapest_hour()
+        hourly_rates = self._get_trade_rates(rate_data)
+        return hourly_rates.today_day.cheapest_hour()
 
 
 class CheapestTomorrowElectricitySensor(HourFindSensor):
-    _attr_unique_id = 'sensor.current_spot_electricity_cheapest_tomorrow'
-    _attr_translation_key = 'tomorrow_spot_electricity_cheapest'
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_cheapest_tomorrow'
+        self._attr_translation_key = f'{trade.lower()}_electricity_cheapest_tomorrow'
+
+        self.entity_id = f'sensor.{trade.lower()}_cheapest_electricity_tomorrow'
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        if not rate_data.electricity.tomorrow:
+        hourly_rates = self._get_trade_rates(rate_data)
+        if not hourly_rates.tomorrow:
             return None
 
-        return rate_data.electricity.tomorrow.cheapest_hour()
+        return hourly_rates.tomorrow.cheapest_hour()
 
 
 class MostExpensiveTodayElectricitySensor(HourFindSensor):
-    _attr_unique_id = 'sensor.current_spot_electricity_most_expensive_today'
-    _attr_translation_key = 'today_spot_electricity_most_expensive'
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_most_expensive_today'
+        self._attr_translation_key = f'{trade.lower()}_electricity_most_expensive_today'
+
+        self.entity_id = f'sensor.{trade.lower()}_most_expensive_electricity_today'
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        return rate_data.electricity.today.most_expensive_hour()
+        hourly_rates = self._get_trade_rates(rate_data)
+        return hourly_rates.today.most_expensive_hour()
 
 
 class MostExpensiveTomorrowElectricitySensor(HourFindSensor):
-    _attr_unique_id = 'sensor.current_spot_electricity_most_expensive_tomorrow'
-    _attr_translation_key = 'tomorrow_spot_electricity_most_expensive'
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_most_expensive_tomorrow'
+        self._attr_translation_key = f'{trade.lower()}_electricity_most_expensive_tomorrow'
+
+        self.entity_id = f'sensor.{trade.lower()}_most_expensive_electricity_tomorrow'
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
         if not rate_data:
             return None
 
-        if not rate_data.electricity.tomorrow:
+        hourly_rates = self._get_trade_rates(rate_data)
+        if not hourly_rates.tomorrow:
             return None
 
-        return rate_data.electricity.tomorrow.most_expensive_hour()
+        return hourly_rates.tomorrow.most_expensive_hour()
 
 
-class EnergyHourOrder(SpotRateSensorBase):
+class EnergyHourOrder(ElectricitySpotRateSensorBase):
     _attr_icon = 'mdi:hours-24'
 
 
 class CurrentElectricityHourOrder(EnergyHourOrder):
-    _attr_unique_id = 'sensor.current_spot_electricity_hour_order'
-    _attr_translation_key = 'current_spot_electricity_hour_order'
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.current_{trade.lower()}_electricity_hour_order'
+        self._attr_translation_key = f'{trade.lower()}_electricity_hour_order_today'
+
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
+
         if rate_data is None:
             self._available = False
             self._value = None
             return
 
-        cheapest_order = rate_data.electricity.current_hour.cheapest_consecutive_order[1]
+        hourly_rates = self._get_trade_rates(rate_data)
+        cheapest_order = hourly_rates.current_hour.cheapest_consecutive_order[1]
         if cheapest_order != self._value:
             logger.debug('%s updated from %s to %s', self.unique_id, self._value, cheapest_order)
             self._value = cheapest_order
         else:
             logger.debug('%s unchanged with %d', self.unique_id, cheapest_order)
 
-        for hour in rate_data.electricity.today.hours_by_dt.values():
+        for hour in hourly_rates.today.hours_by_dt.values():
             self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
 
         self._available = True
 
 
 class TomorrowElectricityHourOrder(EnergyHourOrder):
-    _attr_unique_id = 'sensor.tomorrow_spot_electricity_hour_order'
-    _attr_translation_key = 'tomorrow_spot_electricity_hour_order'
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.tomorrow_{trade.lower()}_electricity_hour_order'
+        self._attr_translation_key = f'{trade.lower()}_electricity_hour_order_tomorrow'
+
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
@@ -328,92 +416,39 @@ class TomorrowElectricityHourOrder(EnergyHourOrder):
 
         if not rate_data:
             self._available = False
-        elif rate_data.electricity.tomorrow is None:
-            self._available = False
-        else:
-            self._available = True
-
-            for hour in rate_data.electricity.tomorrow.hours_by_dt.values():
-                self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
-
-
-class TemplatePriceSensor(PriceSensor):
-    def __init__(self, hass: HomeAssistant, resource: Literal['electricity', 'gas'], settings: SpotRateSettings, coordinator: SpotRateCoordinator, template_code: str) -> None:
-        super().__init__(hass, settings, coordinator)
-        self._resource = resource
-        try:
-            self.template = Template(template_code, hass=hass)
-        except TemplateError as e:
-            logger.error('Template error in %s: %s', self.unique_id, e)
-            self.template = None
-
-    def get_current_price(self, rate_data: SpotRateData) -> float:
-        if self._resource == 'gas':
-            return float(rate_data.gas.today)
-        return float(rate_data.electricity.current_hour.price)
-
-    def update(self, rate_data: Optional[SpotRateData]):
-        if rate_data is None or not self.template:
-            self._available = False
-            self._value = None
-            self._attr = {}
             return
 
-        try:
-            current_price = self.get_current_price(rate_data)
-            self._available = True
-        except LookupError:
-            logger.error(
-                'Current time "%s" is not found in SpotRate values:\n%s',
-                rate_data.get_now(),
-                '\n\t'.join([dt.isoformat() for dt in rate_data.electricity.hour_for_dt.keys()]),
-            )
+        hourly_rates = self._get_trade_rates(rate_data)
+        if hourly_rates.tomorrow is None:
             self._available = False
             return
 
-        current_value = self.template.async_render({
-            'value': float(current_price),
-        })
-        logger.info('%s updated from %s to %s', self.unique_id, self._value, current_value)
+        for hour in hourly_rates.tomorrow.hours_by_dt.values():
+            self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
 
-        self._value = current_value
+        self._available = True
 
-
-class ElectricityPriceBuy(TemplatePriceSensor):
-    _attr_unique_id = 'sensor.current_spot_electricity_buy_price'
-    _attr_translation_key = 'current_spot_electricity_buy_price'
-    _attr_icon = 'mdi:cash-minus'
-
-
-class ElectricityPriceSell(TemplatePriceSensor):
-    _attr_unique_id = 'sensor.current_spot_electricity_sell_price'
-    _attr_translation_key = 'current_spot_electricity_sell_price'
-    _attr_icon = 'mdi:cash-plus'
-
-
-class GasPriceBuy(TemplatePriceSensor):
-    _attr_unique_id = 'sensor.current_spot_gas_buy_price'
-    _attr_translation_key = 'current_spot_gas_buy_price'
-    _attr_icon = 'mdi:cash-minus'
 
 #BC
-class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
+class ConsecutiveCheapestElectricitySensor(ElectricityBinarySpotRateSensorBase):
     _attr_icon = 'mdi:cash-clock'
 
-    def __init__(self, hours: int, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator) -> None:
+    def __init__(self, hours: int, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
         self.hours = hours
 
         if self.hours == 1:
-            self._attr_unique_id = 'sensor.spot_electricity_is_cheapest'
-            self._attr_translation_key = 'current_spot_electricity_is_cheapest'
+            self._attr_unique_id = f'sensor.{trade.lower()}_electricity_is_cheapest'
+            self._attr_translation_key = f'{trade.lower()}_electricity_is_cheapest'
         else:
-            self._attr_unique_id = f'sensor.spot_electricity_is_cheapest_{self.hours}_hours_block'
-            self._attr_translation_key = 'current_spot_electricity_is_cheapest_hours_block'
+            self._attr_unique_id = f'sensor.{trade.lower()}_electricity_is_cheapest_{self.hours}_hours_block'
+            self._attr_translation_key = f'{trade.lower()}_electricity_is_cheapest_hours_block'
             self._attr_translation_placeholders = {
                 'hours': self.hours,
             }
 
-        super().__init__(hass=hass, settings=settings, coordinator=coordinator)
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
         dt = start
@@ -422,8 +457,9 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
         sum_price: Decimal = Decimal(0)
         count: int = 0
 
+        hourly_rates = self._get_trade_rates(rate_data)
         while dt <= end:
-            hour = rate_data.electricity.hour_for_dt(dt)
+            hour = hourly_rates.hour_for_dt(dt)
             sum_price += hour.price
             count += 1
             if min_price is None or hour.price < min_price:
@@ -445,92 +481,147 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
-        self._attr_is_on = None
 
         if not rate_data:
             self._available = False
-        else:
-            is_on = False
+            self._attr_is_on = None
+            return
 
-            for hour in rate_data.electricity.hours_by_dt.values():
-                start = hour.dt_local - timedelta(hours=self.hours - 1)
-                end = hour.dt_local + timedelta(hours=1, seconds=-1)
+        is_on = False
+        hourly_rates = self._get_trade_rates(rate_data)
+        for hour in hourly_rates.hours_by_dt.values():
+            start = hour.dt_local - timedelta(hours=self.hours - 1)
+            end = hour.dt_local + timedelta(hours=1, seconds=-1)
 
-                # Ignore start times before now, we only want future blocks
-                if end < rate_data.electricity.now:
-                    continue
+            # Ignore start times before now, we only want future blocks
+            if end < hourly_rates.now:
+                continue
 
-                if hour.cheapest_consecutive_order[self.hours] == 1:
-                    if not self._attr:
-                        # Only put it there once, so to contains closes interval in the future
-                        self._attr = self._compute_attr(rate_data, start, end)
+            if hour.cheapest_consecutive_order[self.hours] == 1:
+                if not self._attr:
+                    # Only put it there once, so to contains closes interval in the future
+                    self._attr = self._compute_attr(rate_data, start, end)
 
-                    if start <= rate_data.electricity.now <= end:
-                        is_on = True
+                if start <= hourly_rates.now <= end:
+                    is_on = True
 
             self._attr_is_on = is_on
             self._available = True
 
+
 #BC
-class HasTomorrowElectricityData(BinarySpotRateSensorBase):
-    _attr_unique_id = 'sensor.spot_electricity_has_tomorrow_data'
-    _attr_translation_key = 'tomorrow_spot_electricity_has_data'
+class HasTomorrowElectricityData(ElectricityBinarySpotRateSensorBase):
     _attr_icon = 'mdi:cash-clock'
+
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.{trade.lower()}_electricity_has_tomorrow_data'
+        self._attr_translation_key = f'{trade.lower()}_electricity_has_tomorrow_data'
+
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
-        self._attr_is_on = None
 
         if not rate_data:
+            self._attr_is_on = None
             self._available = False
-        else:
-            self._attr_is_on = rate_data.electricity.tomorrow is not None
-            self._available = True
-
-
-
-class TodayGasSensor(PriceSensor):
-    _attr_unique_id = 'sensor.current_spot_gas_price'
-    _attr_translation_key = 'current_spot_gas_price'
-
-    def update(self, rate_data: Optional[SpotRateData]):
-        if rate_data is None:
-            self._available = False
-            self._value = None
-            self._attr = {}
             return
 
-        self._value = rate_data.gas.today
+        self._attr_is_on = self._get_trade_rates(rate_data).tomorrow is not None
         self._available = True
 
 
-class TomorrowGasSensor(PriceSensor):
-    _attr_unique_id = 'sensor.tomorrow_spot_gas_price'
-    _attr_translation_key = 'tomorrow_spot_gas_price'
-
-    def update(self, rate_data: Optional[SpotRateData]):
-        if rate_data is None:
-            self._available = False
-            self._value = None
-            self._attr = {}
-            return
-
-        self._value = rate_data.gas.tomorrow
-        self._available = self._value is not None
+class GasSpotRateSensorBase(GasSpotRateSensorMixin, SensorEntity):
+    pass
 
 
-#BC
-class HasTomorrowGasData(BinarySpotRateSensorBase):
-    _attr_unique_id = 'sensor.spot_gas_has_tomorrow_data'
-    _attr_translation_key = 'tomorrow_spot_gas_has_data'
-    _attr_icon = 'mdi:cash-clock'
+class GasPriceSensor(GasSpotRateSensorBase):
+    _attr_icon = 'mdi:cash'
+
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_native_unit_of_measurement = f'{settings.currency_human}/{settings.unit}'
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
+
+
+class TodayGasSensor(GasPriceSensor):
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade, deprecated: bool = False) -> None:
+        if deprecated:
+            self._attr_unique_id = f'sensor.current_spot_gas_{trade.lower()}_price'
+            self._attr_translation_key = f'current_spot_gas_{trade.lower()}_price'
+        else:
+            self._attr_unique_id = f'sensor.current_{trade.lower()}_gas_price'
+            self._attr_translation_key = f'current_{trade.lower()}_gas_price'
+
+        match trade:
+            case Trade.BUY:
+                self._attr_icon = 'mdi:cash-minus'
+            case Trade.SELL:
+                self._attr_icon = 'mdi:cash-plus'
+
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
     def update(self, rate_data: Optional[SpotRateData]):
         self._attr = {}
-        self._attr_is_on = None
+
+        if rate_data is None:
+            self._available = False
+            self._value = None
+            return
+
+        self._available = True
+        self._value = self._get_trade_rates(rate_data).today
+
+
+class TomorrowGasSensor(GasPriceSensor):
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.tomorrow_{trade.lower()}_gas_price'
+        self._attr_translation_key = f'tomorrow_{trade.lower()}_gas_price'
+
+        match trade:
+            case Trade.BUY:
+                self._attr_icon = 'mdi:cash-minus'
+            case Trade.SELL:
+                self._attr_icon = 'mdi:cash-plus'
+
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
+
+    def update(self, rate_data: Optional[SpotRateData]):
+        self._attr = {}
+
+        if rate_data is None:
+            self._available = False
+            self._value = None
+            return
+
+        self._value = self._get_trade_rates(rate_data).tomorrow
+        self._available = self._value is not None
+
+
+class HasTomorrowGasData(GasBinarySpotRateSensorBase):
+    _attr_icon = 'mdi:cash-clock'
+
+    def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
+        self._attr_unique_id = f'sensor.{trade.lower()}_gas_has_tomorrow_data'
+        self._attr_translation_key = f'{trade.lower()}_gas_has_tomorrow_data'
+
+        self.entity_id = self._attr_unique_id
+
+        super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
+
+    def update(self, rate_data: Optional[SpotRateData]):
+        self._attr = {}
 
         if not rate_data:
+            self._attr_is_on = None
             self._available = False
-        else:
-            self._attr_is_on = rate_data.gas.tomorrow is not None
-            self._available = True
+            return
+
+        self._attr_is_on = self._get_trade_rates(rate_data).tomorrow is not None
+        self._available = True
