@@ -18,7 +18,7 @@ class CnbRate:
             'date': day.strftime('%d.%m.%Y')
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(self.RATES_URL, params=params) as response:
                 text = await response.text()
         return text

@@ -90,7 +90,7 @@ class SpotRate:
 
     async def _download(self, query: str) -> str:
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(trust_env=True) as session:
                 async with session.post(self.OTE_PUBLIC_URL, data=query) as response:
                     return await response.text()
         except aiohttp.ClientError as e:
