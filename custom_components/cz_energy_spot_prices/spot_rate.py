@@ -6,6 +6,7 @@ from typing import Dict, Literal
 from decimal import Decimal
 import asyncio
 import xml.etree.ElementTree as ET
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 import aiohttp
 
@@ -131,6 +132,8 @@ class SpotRate:
 
     async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh'], has_hours: bool = True) -> RateByDatetime:
         text = await self._download(query)
+        if 'Application is not available' in text:
+            raise UpdateFailed('OTE Portal is currently not available!')
         root = ET.fromstring(text)
 
         fault = root.find('.//{http://schemas.xmlsoap.org/soap/envelope/}Fault')
