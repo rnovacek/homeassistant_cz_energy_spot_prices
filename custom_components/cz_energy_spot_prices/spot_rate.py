@@ -97,6 +97,14 @@ class SpotRate:
         except aiohttp.ClientError as e:
             raise OTEFault(f'Unable to download rates: {e}')
 
+    def _fromstring(self, text: str):
+        try:
+            return ET.fromstring(text)
+        except Exception as e:
+            if 'Application is not available' in text:
+                raise UpdateFailed('OTE Portal is currently not available!') from e
+            raise UpdateFailed('Failed to parse query response.') from e
+
     async def get_electricity_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
         assert start.tzinfo, 'Timezone must be set'
         start_tz = start.astimezone(self.timezone)
@@ -132,10 +140,7 @@ class SpotRate:
 
     async def _get_rates(self, query: str, unit: Literal['kWh', 'MWh'], has_hours: bool = True) -> RateByDatetime:
         text = await self._download(query)
-        if 'Application is not available' in text:
-            raise UpdateFailed('OTE Portal is currently not available!')
-        root = ET.fromstring(text)
-
+        root = self._fromstring(text)
         fault = root.find('.//{http://schemas.xmlsoap.org/soap/envelope/}Fault')
         if fault:
             faultstring = fault.find('faultstring')
