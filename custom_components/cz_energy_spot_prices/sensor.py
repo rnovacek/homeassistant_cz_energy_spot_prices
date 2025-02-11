@@ -460,12 +460,51 @@ class TemplatePriceSensor(PriceSensor):
             return float(rate_data.gas.today)
         return float(rate_data.electricity.current_hour.price)
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    def update(self, rate_data: SpotRateData|None):
         if rate_data is None or not self.template:
             self._available = False
             self._value = None
             self._attr = {}
             return
+
+        if self._resource == 'electricity':
+            try:
+                final_prices = {
+                    rate.dt_local: self.template.async_render(
+                        {"value": float(rate.price), "time": rate.dt_local}
+                    )
+                    for (
+                        dt,
+                        rate,
+                    ) in rate_data.electricity.today_day.hours_by_dt.items()
+                }
+                srt_prices = {
+                    kv[0]: [kv[1], i + 1]
+                    for i, kv in enumerate(
+                        sorted(final_prices.items(), key=lambda x: x[1])
+                    )
+                }
+                if rate_data.electricity.tomorrow_day:
+                    tomorrow_prices = {
+                        rate.dt_local: [self.template.async_render(
+                            {"value": float(rate.price), "time": rate.dt_local}
+                        ), 24
+                        ]
+                        for (
+                            dt,
+                            rate,
+                        ) in rate_data.electricity.tomorrow_day.hours_by_dt.items()
+                    }
+                    srt_prices.update(tomorrow_prices)
+
+                self._attr = {
+                    "hour_prices": srt_prices,
+                    "current_hour_order": srt_prices[
+                        rate_data.electricity.current_hour.dt_local
+                    ][1],
+                }
+            except:
+                logger.exception("Error in template render")
 
         try:
             current_price = self.get_current_price(rate_data)
@@ -479,9 +518,12 @@ class TemplatePriceSensor(PriceSensor):
             self._available = False
             return
 
-        current_value = self.template.async_render({
-            'value': float(current_price),
-        })
+        current_value = self.template.async_render(
+            {
+                "value": float(current_price),
+                "time": rate_data.electricity.current_hour.dt_local,
+            }
+        )
         logger.info('%s updated from %s to %s', self.unique_id, self._value, current_value)
 
         self._value = current_value
