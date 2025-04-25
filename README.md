@@ -4,35 +4,107 @@
 
 Home Assistant integration that provides current Czech electricity spot prices based on [OTE](https://ote-cr.cz).
 
-You can select an energy unit between kWh and MWh when configuring the integration. OTE prices are in EUR, but you can also select to use CZK (Czech Koruna) as a currency for displayed prices (based on ČNB rate for given day).
+## Features
+
+- Provides real-time Czech electricity spot and gas prices from [OTE](https://ote-cr.cz).
+- Supports multiple currencies (EUR, CZK) and energy units (kWh, MWh).
+- Configurable templates for buy/sell prices, including VAT and distribution fees.
+- Includes sensors for monitoring current, cheapest, and most expensive electricity prices.
+- Compatible with Home Assistant automations for energy optimization.
 
 ### Important note
 
-OTE (Czech market operator) uses hourly prices indexed from 1, so `1` (first hour of a day) means 0:00 - 1:00. It does NOT mean 1:00 - 2:00 as one might expect. Please keep this in mind when comparing prices reported by this integration with other sources (OTE, your electricity provider/distributor).
+OTE (Czech market operator) uses hourly prices indexed from `1`, where:
+
+- `1` (first hour of the day) corresponds to `00:00 - 01:00`.
+- It does **not** mean `01:00 - 02:00`, as one might expect.
+
+Keep this in mind when comparing prices reported by this integration with other sources (e.g., OTE, your electricity provider/distributor).
+
+## Screenshot
+
+See [Displaying a chart](#displaying-a-chart) for details.
+
+![Screenshot](screenshot.png)
+
+## Buy and sell prices
+
+The integration shows just spot prices by default. If you want to also use actual prices for buying and selling (so including distribution fees, VAT, etc), you need to configure it. Use the "Configure" button in integration details and set templates for buying/selling.
+
+Variables:
+- `hour` variable to see what hour is currently being computed.
+- `value` is base spot price for given hour.
+
+### Example templates
+
+**Electricity cost when buying**
+
+```jinja
+{% set tax_kWh = 28.30 / 1000.0 %}
+{% set system_services_kWh = 212.82 / 1000.0 %}
+{% set oze_kWh = 495 / 1000.0 %}
+{% set low_distrib_kWh = 450.43 / 1000.0 %}
+{% set high_distrib_kWh = 644.30 / 1000.0 %}
+{% set operator_cost_kWh = 350.0 / 1000.0 %}
+{% set vat_percent = 21 %}
+
+{% set distrib_kWh = low_distrib_kWh %}
+{% if as_local(hour).hour in [9, 12, 16, 20] %}
+  {% set distrib_kWh = high_distrib_kWh %}
+{% endif %}
+
+{{ (value + distrib_kWh + tax_kWh + oze_kWh + system_services_kWh + operator_cost_kWh) * ( 100.0 + vat_percent ) / 100.0 }}
+```
+
+**Electricity cost when selling**
+
+```jinja
+{% set operator_cost_kWh = 0.25 %}
+{{ value - operator_cost_kWh }}
+```
 
 ## Installation
 
-1. Copy `custom_components/cz_energy_spot_prices` directory into your `custom_components` in your configuration directory.
-2. Restart Home Assistant
-3. Open Settings -> Devices & Services -> Integration
-4. Search for "Czech Energy Spot Prices" and click the search result
-5. Configure Currency and Unit of energy
-6. Submit
+You can install the integration using HACS (preferred) or manually.
+
+### HACS (preferred)
+
+1. Open HACS in your Home Assistant instance.
+2. Search for "Czech Energy Spot Prices" and install it.
+3. Restart Home Assistant.
+
+### Manual
+
+1. Download the `custom_components/cz_energy_spot_prices` directory.
+2. Copy it into the `custom_components` folder in your Home Assistant configuration directory.
+3. Restart Home Assistant.
+
+### Add and configure the integration
+
+1. Go to **Settings** -> **Devices & Services** -> **Add integration**.
+3. Search for "Czech Energy Spot Prices" and select it.
+4. Configure the currency and energy unit.
+4. (Optional) Use the "Configure" button to set templates for buy/sell prices (see above).
 
 ## Sensors
+
+The integration provides several sensors to monitor electricity/gas prices and related data. Below is a list of available sensors and their attributes:
+
 
 | Sensor | value | attributes |
 | ------ | ----- | ---------- |
 | **Current Spot Electricity Price** | electricity price for current hour | dictionary with timestamps as keys and spot price for given hour as values |
 | **Spot Cheapest Electricity Today** | price of the cheapest electricity today | [At](#at)<br>[Hour](#hour) |
 | **Spot Most Expensive Electricity Today** | price of the most expensive electricity today | [At](#at)<br>[Hour](#hour) |
-| **Spot Cheapest Electricity Tomorrow** | price of the cheapest electricity today | [At](#at)<br>[Hour](#hour) |
+| **Spot Cheapest Electricity Tomorrow** | price of the cheapest electricity tomorrow | [At](#at)<br>[Hour](#hour) |
 | **Spot Most Expensive Electricity Tomorrow** | price of the most expensive electricity tomorrow | [At](#at)<br>[Hour](#hour) |
-| **Current Spot Electricity Hour Order** | order of current hour when we sort hours by it's price (1=cheapest, 24=most expensive) | dictionary with timestamps as keys and `order, price` as values |
+| **Current Spot Electricity Hour Order** | order of current hour when we sort hours by its price (1=cheapest, 24=most expensive) | dictionary with timestamps as keys and `order, price` as values |
 | **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `order, price` as values |
 | **Spot Electricity Has Tomorrow Data** | `On` when data for tomorrow are loaded, `Off` otherwise | |
 | **Spot Electricity Is Cheapest** | `On` when current hour has the cheapest price, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
 | **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current hour is in a block of cheapest consecutive hours, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
+
+If you configure templates for buy and sell prices, there will also be similar sensors for buy/sell prices.
 
 <!-- FIXME: add gas sensors when released -->
 
@@ -77,7 +149,9 @@ average (mean) price in the block, only available when the block is in the futur
 
 ## Displaying a chart
 
-If you want you display a chart with current day (or two days if it's after noon), you can install [apexcharts-card](https://github.com/RomRider/apexcharts-card) card for Home Assistant and then use following config for it:
+![Screenshot](./screenshot.png)
+
+If you want to display a chart with current day (or two days if it's after noon), you can install [apexcharts-card](https://github.com/RomRider/apexcharts-card) card for Home Assistant and then use following config for it:
 
 ```yaml
 type: custom:apexcharts-card
@@ -105,10 +179,14 @@ series:
 
 ## Find cheapest hours in selected interval
 
-Add this as a [template sensor](https://www.home-assistant.io/integrations/template/). Change the intervals on lines 3-5, the sensor will be on when
-cheapest hour in any of the intervals is active. Or you can replace the last line with `{{ min.cheapest_hours }}` to display the cheapest hours.
-
 This is useful for example if you want to turn on your water heater in the afternoon and then again during the night.
+
+### How It Works
+- Define intervals as tuples `(start_hour, end_hour)` (end hour is excluded).
+- The sensor will return `True` if the current hour is the cheapest in any of the defined intervals.
+- Alternatively, replace the last line with `{{ min.cheapest_hours }}` to display the cheapest hours.
+
+### Example Template Sensor
 
 ```jinja
 {# Define your intervals here as tuples (hour starting the interval, hour ending the interval (excluded)) #}
@@ -162,6 +240,9 @@ This is useful for example if you want to turn on your water heater in the after
 ```
 
 ## Example automation for X cheapest hours
+
+This automation turns on a device (e.g., a heater) during the cheapest `X` hours of the day. Replace `X` with the desired number of hours and specify the entity to control.
+
 
 ```yaml
 alias: Turn on for cheapest X hours
