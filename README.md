@@ -96,7 +96,7 @@ The integration provides several sensors to monitor electricity/gas prices and r
 | **Current Spot Electricity Price** | electricity price for current hour | dictionary with timestamps as keys and spot price for given hour as values |
 | **Spot Cheapest Electricity Today** | price of the cheapest electricity today | [At](#at)<br>[Hour](#hour) |
 | **Spot Most Expensive Electricity Today** | price of the most expensive electricity today | [At](#at)<br>[Hour](#hour) |
-| **Spot Cheapest Electricity Tomorrow** | price of the cheapest electricity today | [At](#at)<br>[Hour](#hour) |
+| **Spot Cheapest Electricity Tomorrow** | price of the cheapest electricity tomorrow | [At](#at)<br>[Hour](#hour) |
 | **Spot Most Expensive Electricity Tomorrow** | price of the most expensive electricity tomorrow | [At](#at)<br>[Hour](#hour) |
 | **Current Spot Electricity Hour Order** | order of current hour when we sort hours by its price (1=cheapest, 24=most expensive) | dictionary with timestamps as keys and `order, price` as values |
 | **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `order, price` as values |
