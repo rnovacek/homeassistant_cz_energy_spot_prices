@@ -1,42 +1,84 @@
-from datetime import date, datetime, timezone
-from typing import Dict
+from datetime import date, datetime, timedelta, timezone
+from typing import TypedDict, cast
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 import aiohttp
 
 
+class InvalidDateError(Exception):
+    """Exception raised for invalid date format in CNB API response."""
+
+    pass
+
+
+class Rate(TypedDict):
+    validFor: str
+    order: int
+    country: str
+    currency: str
+    amount: int
+    currencyCode: str
+    rate: float
+
+
+class Rates(TypedDict):
+    rates: list[Rate]
+
+
+class RateError(TypedDict):
+    description: str
+    errorCode: str
+    happenedAt: str
+    endPoint: str
+    messageId: str
+
+
 class CnbRate:
-    RATES_URL = 'https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt'
+    RATES_URL: str = "https://api.cnb.cz/cnbapi/exrates/daily"
 
     def __init__(self) -> None:
-        self._timezone = ZoneInfo('Europe/Prague')
-        self._rates: Dict[str, Decimal] = {}
-        self._last_checked_date = None
+        self._timezone: ZoneInfo = ZoneInfo("Europe/Prague")
+        self._rates: dict[str, Decimal] = {}
+        self._last_checked_date: date | None = None
 
-    async def download_rates(self, day: date) -> str:
-        params = {
-            'date': day.strftime('%d.%m.%Y')
-        }
+    async def download_rates(self, day: date) -> Rates:
+        params = {"date": day.isoformat()}
 
+        text: Rates
         async with aiohttp.ClientSession() as session:
             async with session.get(self.RATES_URL, params=params) as response:
-                text = await response.text()
+                if response.status > 299:
+                    if response.status == 400:
+                        error = cast(RateError, await response.json())
+                        if error.get("errorCode") == "VALIDATION_ERROR":
+                            raise InvalidDateError(f"Invalid date format: {day}")
+
+                    raise Exception(f"Error {response.status} while downloading rates")
+                text = cast(Rates, await response.json())
+        print(f"Downloaded rates for {day}: {text}")
         return text
 
-    async def get_day_rates(self, day: date) -> Dict[str, Decimal]:
-        rates: Dict[str, Decimal] = {
-            'CZK': Decimal(1),
+    async def get_day_rates(self, day: date) -> dict[str, Decimal]:
+        rates: dict[str, Decimal] = {
+            "CZK": Decimal(1),
         }
 
-        text = await self.download_rates(day)
-        lines = text.split('\n')
-        # First two lines are just headers, skip them
-        for line in lines[2:]:
-            if not line:
-                # last line is empty
+        cnb_rates: Rates | None = None
+        for previous_day in range(0, 7):
+            try:
+                cnb_rates = await self.download_rates(
+                    day - timedelta(days=previous_day)
+                )
+                break
+            except InvalidDateError:
                 continue
-            coutry, currency, amount, iso, rate = line.split('|')
-            rates[iso] = Decimal(rate.replace(',', '.'))
+
+        if not cnb_rates:
+            raise Exception("Could not download CNB rates for last 7 days")
+
+        for rate in cnb_rates["rates"]:
+            rates[rate["currencyCode"]] = Decimal(rate["rate"])
+
         return rates
 
     async def get_current_rates(self):
