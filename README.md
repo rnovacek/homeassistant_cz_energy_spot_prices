@@ -173,7 +173,7 @@ series:
       in_header: raw
     data_generator: |
       return Object.entries(entity.attributes).map(([date, value], index) => {
-        return [new Date(date).getTime(), value];
+        return [new Date(date).getTime() + (30 * 60 * 1000), value];
       });
 ```
 
