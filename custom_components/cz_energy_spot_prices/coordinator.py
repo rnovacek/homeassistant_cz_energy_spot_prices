@@ -124,12 +124,22 @@ class HourlySpotRateData:
                     hour.consecutive_sum_prices[(offset + 1)] = rate
 
         for consecutive in CONSECUTIVE_HOURS:
-            sorted_today_hours = sorted(self.today_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive])
+            sorted_today_hours = sorted(
+                self.today_day.hours_by_dt.values(),
+                key=lambda hour: hour.consecutive_sum_prices.get(
+                    consecutive, Decimal(0)
+                ),
+            )
             for i, hour in enumerate(sorted_today_hours, 1):
                 hour.cheapest_consecutive_order[consecutive] = i
 
             if self.tomorrow_day is not None:
-                sorted_tomorrow_hours = sorted(self.tomorrow_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive])
+                sorted_tomorrow_hours = sorted(
+                    self.tomorrow_day.hours_by_dt.values(),
+                    key=lambda hour: hour.consecutive_sum_prices.get(
+                        consecutive, Decimal(0)
+                    ),
+                )
                 for i, hour in enumerate(sorted_tomorrow_hours, 1):
                     hour.cheapest_consecutive_order[consecutive] = i
 
