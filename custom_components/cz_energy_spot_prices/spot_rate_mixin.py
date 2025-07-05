@@ -1,6 +1,5 @@
 from collections.abc import Mapping
 from decimal import Decimal
-from functools import cached_property
 import logging
 from enum import StrEnum
 from typing import Any, cast, override
@@ -31,8 +30,8 @@ class SpotRateSensorMixin(CoordinatorEntity[SpotRateCoordinator]):
     hass: HomeAssistant
     _settings: SpotRateSettings
     _trade: Trade
-    _value: cached_property[Decimal | int | None]
-    _attr: cached_property[Mapping[str, Any] | None]
+    _value: Decimal | int | None
+    _attr: Mapping[str, Any] | None
     _attr_has_entity_name: bool = True
     _attr_unique_id: str | None
     _attr_translation_key: str | None
@@ -89,14 +88,14 @@ class SpotRateSensorMixin(CoordinatorEntity[SpotRateCoordinator]):
     def update(self, _rate_data: SpotRateData | None) -> None:
         raise NotImplementedError()
 
-    @cached_property
+    @property
     def native_value(self):
         """Return the native value of the sensor."""
         return self._value
 
-    @cached_property
+    @property
     @override
-    def extra_state_attributes(self):
+    def extra_state_attributes(self):  # pyright: ignore[reportIncompatibleVariableOverride]
         """Return other attributes of the sensor."""
         return self._attr
 
