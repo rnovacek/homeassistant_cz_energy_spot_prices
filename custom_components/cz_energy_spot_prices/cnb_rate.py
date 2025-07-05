@@ -55,7 +55,6 @@ class CnbRate:
 
                     raise Exception(f"Error {response.status} while downloading rates")
                 text = cast(Rates, await response.json())
-        print(f"Downloaded rates for {day}: {text}")
         return text
 
     async def get_day_rates(self, day: date) -> dict[str, Decimal]:

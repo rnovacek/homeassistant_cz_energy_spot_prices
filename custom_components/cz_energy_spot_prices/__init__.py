@@ -1,12 +1,18 @@
 """Czech Spot Energy Prices"""
 
 import logging
+from typing import cast
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 
-from .const import DOMAIN, PLATFORMS, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
+from .const import (
+    PLATFORMS,
+    ADDITIONAL_COSTS_BUY_ELECTRICITY,
+    ADDITIONAL_COSTS_SELL_ELECTRICITY,
+    ADDITIONAL_COSTS_BUY_GAS,
+)
 from .coordinator import SpotRateCoordinator
 from .spot_rate import SpotRate
 
@@ -19,7 +25,7 @@ type SpotRateConfigEntry = ConfigEntry[SpotRateCoordinator]
 async def options_update_listener(hass: HomeAssistant, config_entry: ConfigEntry):
     """Handle options update."""
     logger.debug('options_update_listener', config_entry.data)
-    await hass.config_entries.async_reload(config_entry.entry_id)
+    _ = await hass.config_entries.async_reload(config_entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEntry):
@@ -29,11 +35,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
     coordinator = SpotRateCoordinator(
         hass=hass,
         spot_rate=spot_rate,
-        in_eur=config_entry.data[CONF_CURRENCY] == 'EUR',
-        unit=config_entry.data[CONF_UNIT_OF_MEASUREMENT],
-        electricity_buy_rate_template_code = config_entry.options.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or '',
-        electricity_sell_rate_template_code = config_entry.options.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or '',
-        gas_buy_rate_template_code = config_entry.options.get(ADDITIONAL_COSTS_BUY_GAS) or '',
+        in_eur=cast(str, config_entry.data[CONF_CURRENCY]) == "EUR",
+        unit=cast(SpotRate.EnergyUnit, config_entry.data[CONF_UNIT_OF_MEASUREMENT]),
+        electricity_buy_rate_template_code=config_entry.options.get(
+            ADDITIONAL_COSTS_BUY_ELECTRICITY
+        )
+        or "",
+        electricity_sell_rate_template_code=config_entry.options.get(
+            ADDITIONAL_COSTS_SELL_ELECTRICITY
+        )
+        or "",
+        gas_buy_rate_template_code=config_entry.options.get(ADDITIONAL_COSTS_BUY_GAS)
+        or "",
     )
 
     await coordinator.async_config_entry_first_refresh()

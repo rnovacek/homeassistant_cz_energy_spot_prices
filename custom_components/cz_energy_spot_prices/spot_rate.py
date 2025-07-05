@@ -2,7 +2,7 @@ import sys
 import logging
 from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
-from typing import Dict, Literal
+from typing import Literal
 from decimal import Decimal
 import asyncio
 import xml.etree.ElementTree as ET
@@ -76,7 +76,7 @@ class SpotRate:
     OTE_PUBLIC_URL = 'https://www.ote-cr.cz/services/PublicDataService'
     UNIT = 'MWh'
 
-    RateByDatetime = Dict[datetime, Decimal]
+    RateByDatetime = dict[datetime, Decimal]
     EnergyUnit = Literal['kWh', 'MWh']
 
     def __init__(self):
@@ -129,7 +129,7 @@ class SpotRate:
                 cnb_rate.get_current_rates(),
             )
             eur_rate = currency_rates['EUR']
-            converted = {}
+            converted: SpotRate.RateByDatetime = {}
             for dt, value in rates.items():
                 converted[dt] = value * eur_rate
             return converted
@@ -171,7 +171,11 @@ class SpotRate:
 
             price_el = item.find('{http://www.ote-cr.cz/schema/service/public}Price')
             if price_el is None or price_el.text is None:
-                logger.info('Item has no "Price" child or is empty: %s', current_date)
+                logger.info(
+                    'Item has no "Price" child or is empty: %s %s',
+                    current_date,
+                    current_hour,
+                )
                 continue
             current_price = Decimal(price_el.text)
 
@@ -179,7 +183,7 @@ class SpotRate:
                 # API returns price for MWh, we need to covert to kWh
                 current_price /= Decimal(1000)
             elif unit != 'MWh':
-                raise ValueError(f'Invalid unit {unit}')
+                raise ValueError(f"Invalid unit {unit}")  # pyright: ignore[reportUnreachable]
 
             start_of_day = datetime.combine(current_date, time(0), tzinfo=self.timezone)
 
@@ -202,7 +206,9 @@ if __name__ == '__main__':
 
     in_eur = False
 
-    def print_rates(rates_eur, rates_czk):
+    def print_rates(
+        rates_eur: dict[datetime, Decimal], rates_czk: dict[datetime, Decimal]
+    ):
         for dt, eur in rates_eur.items():
             czk = rates_czk[dt]
             print(f'{dt.isoformat():30s} {eur:10.4f} {czk:10.4f}')

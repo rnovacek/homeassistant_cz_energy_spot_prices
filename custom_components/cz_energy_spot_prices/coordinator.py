@@ -1,18 +1,18 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone, time
+from typing import cast, final, override
 from zoneinfo import ZoneInfo
 from decimal import Decimal
-from typing import Dict, Union, Optional
 import random
 
 import async_timeout
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.template import Template, TemplateError
+from homeassistant.exceptions import TemplateError
+from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
-    UpdateFailed,
     event,
 )
 
@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 CONSECUTIVE_HOURS = (1, 2, 3, 4, 6, 8)
 
 
-def get_now(zoneinfo: Union[timezone, ZoneInfo] = timezone.utc) -> datetime:
+def get_now(zoneinfo: timezone | ZoneInfo = timezone.utc) -> datetime:
     return datetime.now(zoneinfo)
 
-
+@final
 class SpotRateHour:
 
     def __init__(self, dt_utc: datetime, dt_local: datetime, price: Decimal):
@@ -36,21 +36,22 @@ class SpotRateHour:
 
         self.most_expensive_order = 0
 
-        self._consecutive_sum_prices: Dict[int, Decimal] = {}
+        self.consecutive_sum_prices: dict[int, Decimal] = {}
 
         self.cheapest_consecutive_order = {i: 0 for i in CONSECUTIVE_HOURS}
 
 
+@final
 class SpotRateDay:
     def __init__(self):
-        self.hours_by_dt: Dict[datetime, SpotRateHour] = {}
+        self.hours_by_dt: dict[datetime, SpotRateHour] = {}
 
         self._cheapest_hour = 0
 
     def add_hour(self, hour: SpotRateHour):
         self.hours_by_dt[hour.dt_utc] = hour
 
-    def cheapest_hour(self) -> Optional[SpotRateHour]:
+    def cheapest_hour(self) -> SpotRateHour | None:
         cheapest_hour = None
         for hour in self.hours_by_dt.values():
             if cheapest_hour is None or cheapest_hour.price > hour.price:
@@ -58,7 +59,7 @@ class SpotRateDay:
 
         return cheapest_hour
 
-    def most_expensive_hour(self) -> Optional[SpotRateHour]:
+    def most_expensive_hour(self) -> SpotRateHour | None:
         most_expensive_hour = None
         for hour in self.hours_by_dt.values():
             if most_expensive_hour is None or most_expensive_hour.price < hour.price:
@@ -67,25 +68,36 @@ class SpotRateDay:
         return most_expensive_hour
 
 
+@final
 class HourlySpotRateData:
-    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, rate_template: Optional[Template]) -> None:
+    def __init__(
+        self,
+        rates: SpotRate.RateByDatetime,
+        zoneinfo: ZoneInfo,
+        rate_template: Template | None,
+    ) -> None:
         self.now = get_now(zoneinfo)
         self.today_date = self.now.date()
         self.tomorrow_date = self.today_date + timedelta(days=1)
 
         self.today_day = SpotRateDay()
-        self.tomorrow_day: Optional[SpotRateDay] = None
+        self.tomorrow_day: SpotRateDay | None = None
 
-        self.hours_by_dt: Dict[datetime, SpotRateHour] = {}
+        self.hours_by_dt: dict[datetime, SpotRateHour] = {}
 
         # Create individual SpotRateHour instances and compute statistics while doing that
         for utc_hour, rate in rates.items():
             if rate_template is not None:
-                rate =  Decimal(
-                      rate_template.async_render({
-                        'value': float(rate),
-                        'hour': utc_hour,
-                    })
+                rate = Decimal(
+                    cast(
+                        float,
+                        rate_template.async_render(
+                            {
+                                "value": float(rate),
+                                "hour": utc_hour,
+                            }
+                        ),
+                    )
                 )
             rate_hour = SpotRateHour(utc_hour, utc_hour.astimezone(zoneinfo), rate)
             self.hours_by_dt[utc_hour] = rate_hour
@@ -109,7 +121,7 @@ class HourlySpotRateData:
                 rate += prev_hour.price
 
                 if (offset + 1) in CONSECUTIVE_HOURS:
-                    hour._consecutive_sum_prices[(offset + 1)] = rate
+                    hour.consecutive_sum_prices[(offset + 1)] = rate
 
         for consecutive in CONSECUTIVE_HOURS:
             sorted_today_hours = sorted(self.today_day.hours_by_dt.values(), key=lambda hour: hour._consecutive_sum_prices[consecutive])
@@ -138,12 +150,19 @@ class HourlySpotRateData:
         return self.today_day
 
     @property
-    def tomorrow(self) -> Optional[SpotRateDay]:
+    def tomorrow(self) -> SpotRateDay | None:
         return self.tomorrow_day
 
 
+@final
 class HourlyTradeRateData:
-    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, buy_rate_template: Optional[Template], sell_rate_template: Optional[Template]) -> None:
+    def __init__(
+        self,
+        rates: SpotRate.RateByDatetime,
+        zoneinfo: ZoneInfo,
+        buy_rate_template: Template | None,
+        sell_rate_template: Template | None,
+    ) -> None:
         self.spot_rates = HourlySpotRateData(rates, zoneinfo, None)
 
         if buy_rate_template is None:
@@ -157,8 +176,14 @@ class HourlyTradeRateData:
             self.sell_rates = HourlySpotRateData(rates, zoneinfo, sell_rate_template)
 
 
+@final
 class DailySpotRateData:
-    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, rate_template: Optional[Template]) -> None:
+    def __init__(
+        self,
+        rates: SpotRate.RateByDatetime,
+        zoneinfo: ZoneInfo,
+        rate_template: Template | None,
+    ) -> None:
         self.now = get_now(zoneinfo)
         today = self.now.date()
 
@@ -182,25 +207,41 @@ class DailySpotRateData:
         return value
 
     @property
-    def tomorrow(self) -> Optional[Decimal]:
+    def tomorrow(self) -> Decimal | None:
         return self._tomorrow
 
-    def _get_trade_rate(self, rates: SpotRate.RateByDatetime, dt: datetime, rate_template: Optional[Template]) -> Decimal:
+    def _get_trade_rate(
+        self,
+        rates: SpotRate.RateByDatetime,
+        dt: datetime,
+        rate_template: Template | None,
+    ) -> Decimal | None:
         rate = rates.get(dt, None) or None
 
         if rate is not None and rate_template is not None:
             rate = Decimal(
-                rate_template.async_render({
-                    'value': float(rate),
-                    'day': dt,
-                })
+                cast(
+                    float,
+                    rate_template.async_render(
+                        {
+                            "value": float(rate),
+                            "day": dt,
+                        }
+                    ),
+                )
             )
 
         return rate
 
 
+@final
 class DailyTradeRateData:
-    def __init__(self, rates: SpotRate.RateByDatetime, zoneinfo: ZoneInfo, buy_rate_template: Optional[Template]) -> None:
+    def __init__(
+        self,
+        rates: SpotRate.RateByDatetime,
+        zoneinfo: ZoneInfo,
+        buy_rate_template: Template | None,
+    ) -> None:
         self.spot_rates = DailySpotRateData(rates, zoneinfo, None)
         if buy_rate_template is None:
             self.buy_rates = self.spot_rates
@@ -208,16 +249,18 @@ class DailyTradeRateData:
             self.buy_rates = DailySpotRateData(rates, zoneinfo, buy_rate_template)
 
 
+@final
 class SpotRateData:
     def __init__(self, electricity: HourlyTradeRateData, gas: DailyTradeRateData):
         self.electricity = electricity
         self.gas = gas
 
-    def get_now(self, zoneinfo: Union[timezone, ZoneInfo] = timezone.utc) -> datetime:
+    def get_now(self, zoneinfo: timezone | ZoneInfo = timezone.utc) -> datetime:
         return get_now(zoneinfo=zoneinfo)
 
 
-class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
+@final
+class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData | None]):
     """My custom coordinator."""
 
     def __init__(self, hass: HomeAssistant, spot_rate: SpotRate, in_eur: bool, unit: SpotRate.EnergyUnit, electricity_buy_rate_template_code: str, electricity_sell_rate_template_code: str, gas_buy_rate_template_code: str):
@@ -236,34 +279,35 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         self._retry_attempt = 0
         # Delays in seconds, total needs to be less than 3600 (one hour) as the `on_schedule` is scheduled once an hour
         self._retry_attempt_delays = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        unique_id = f"spot_rate_{unit}_{self._in_eur}"
 
         self._electricity_buy_rate_template = None
         if electricity_buy_rate_template_code.strip():
             try:
                 self._electricity_buy_rate_template = Template(electricity_buy_rate_template_code, hass)
             except TemplateError as e:
-                logger.error('Template error in %s: %s', self.unique_id, e)
+                logger.error("Template error in %s: %s", unique_id, e)
 
         self._electricity_sell_rate_template = None
         if electricity_sell_rate_template_code.strip():
             try:
                 self._electricity_sell_rate_template = Template(electricity_sell_rate_template_code, hass)
             except TemplateError as e:
-                logger.error('Template error in %s: %s', self.unique_id, e)
+                logger.error("Template error in %s: %s", unique_id, e)
 
         self._gas_buy_rate_template = None
         if gas_buy_rate_template_code.strip():
             try:
                 self._gas_buy_rate_template = Template(gas_buy_rate_template_code, hass)
             except TemplateError as e:
-                logger.error('Template error in %s: %s', self.unique_id, e)
+                logger.error("Template error in %s: %s", unique_id, e)
 
         # TODO: do we need to unschedule it?
         self._unschedule = event.async_track_utc_time_change(hass, self.on_schedule, minute=0, second=0)
 
     @callback
-    def on_schedule(self, dt):
-        self.hass.async_create_task(self.async_refresh())
+    def on_schedule(self, _dt: datetime):
+        _ = self.hass.async_create_task(self.async_refresh())
 
     async def fetch_data(self):
         logger.debug('SpotRateCoordinator.fetch_data')
@@ -291,11 +335,11 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         self._retry_attempt += 1
         if delay is not None:
             logger.error('OTE request failed %d times, retrying in %d seconds', self._retry_attempt, delay, exc_info=exc_info)
-            event.async_call_later(self.hass, delay=delay, action=self.update_data)
+            _ = event.async_call_later(self.hass, delay=delay, action=self.update_data)
         else:
             logger.error('OTE request failed %d times, not retrying', self._retry_attempt, exc_info=exc_info)
 
-    async def update_data(self, dt):
+    async def update_data(self, dt: datetime):
         logger.debug('SpotRateCoordinator.update_data %s', dt)
         try:
             self._spot_rate_data = await self.fetch_data()
@@ -307,6 +351,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
         except Exception:
             logger.exception('OTE request failed unexpectedly, not retrying')
 
+    @override
     async def _async_update_data(self):
         """Fetch data from API endpoint.
 
@@ -320,7 +365,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
             # We have some data, schedule update after a random delay to avoid all
             # users hitting the API at the same time, max delay is 2 minutes
             delay = random.randint(5, 120)
-            event.async_call_later(self.hass, delay=delay, action=self.update_data)
+            _ = event.async_call_later(self.hass, delay=delay, action=self.update_data)
             logger.debug(f'SpotRateCoordinator.update_data scheduled in {delay} seconds')
         else:
             try:
@@ -332,3 +377,12 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData]):
                 logger.exception('OTE request failed unexpectedly during intial load')
 
         return self._spot_rate_data
+
+    def has_electricity_buy_rate_template(self) -> bool:
+        return self._electricity_buy_rate_template is not None
+
+    def has_electricity_sell_rate_template(self) -> bool:
+        return self._electricity_sell_rate_template is not None
+
+    def has_gas_buy_rate_template(self) -> bool:
+        return self._gas_buy_rate_template is not None

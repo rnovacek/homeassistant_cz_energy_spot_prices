@@ -1,17 +1,16 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Optional
 from decimal import Decimal
+from typing import Any, Callable, cast, override
 from zoneinfo import ZoneInfo
 
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.template import Template, TemplateError
+from homeassistant.helpers.entity import Entity
 
 from . import SpotRateConfigEntry
-from .const import ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
 from .binary_sensor import ElectricityBinarySpotRateSensorBase, GasBinarySpotRateSensorBase
 from .coordinator import SpotRateCoordinator, SpotRateData, SpotRateHour, CONSECUTIVE_HOURS
 from .spot_rate_mixin import ElectricitySpotRateSensorMixin, GasSpotRateSensorMixin, Trade
@@ -20,12 +19,16 @@ from .spot_rate_settings import SpotRateSettings
 logger = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: SpotRateConfigEntry,
+    async_add_entities: Callable[[list[Entity]], None],
+):
     logger.info('async_setup_entry %s, data: [%s] options: [%s]', entry.unique_id, entry.data, entry.options)
 
     coordinator = entry.runtime_data
-    currency = entry.data[CONF_CURRENCY]
-    unit = entry.data[CONF_UNIT_OF_MEASUREMENT]
+    currency = cast(str, entry.data[CONF_CURRENCY])
+    unit = cast(str, entry.data[CONF_UNIT_OF_MEASUREMENT])
 
     settings = SpotRateSettings(
         currency=currency,
@@ -41,14 +44,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: SpotRateConfigEntry, asy
 
     # Electricity sensors
     sensors = __get_electricity_sensors(hass, settings, coordinator, Trade.SPOT)
-    if coordinator._electricity_buy_rate_template is not None:
+    if coordinator.has_electricity_buy_rate_template():
         sensors += __get_electricity_sensors(hass, settings, coordinator, Trade.BUY)
-    if coordinator._electricity_sell_rate_template is not None:
+    if coordinator.has_electricity_sell_rate_template():
         sensors += __get_electricity_sensors(hass, settings, coordinator, Trade.SELL)
 
     # Gas sensors
     sensors += __get_gas_sensors(hass, settings, coordinator, Trade.SPOT)
-    if coordinator._gas_buy_rate_template is not None:
+    if coordinator.has_gas_buy_rate_template():
         sensors += __get_gas_sensors(hass, settings, coordinator, Trade.BUY)
 
     # Deprecated sensors
@@ -168,7 +171,7 @@ def __get_deprecated_sensors(hass: HomeAssistant, settings: SpotRateSettings, co
         trade = Trade.SPOT,
     )
 
-    sensors = [
+    sensors: list[Entity] = [
         deprecated_buy_electricity_price,
         deprecated_sell_electricity_price,
         deprecated_has_tomorrow_electricity_data,
@@ -190,12 +193,12 @@ def __get_deprecated_sensors(hass: HomeAssistant, settings: SpotRateSettings, co
     return sensors
 
 
-class ElectricitySpotRateSensorBase(ElectricitySpotRateSensorMixin, SensorEntity):
+class ElectricitySpotRateSensorBase(ElectricitySpotRateSensorMixin, SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
     pass
 
 
 class ElectricityPriceSensor(ElectricitySpotRateSensorBase):
-    _attr_icon = 'mdi:cash'
+    _attr_icon: str | None = "mdi:cash"
 
     def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
         self._attr_native_unit_of_measurement = f'{settings.currency_human}/{settings.unit}'
@@ -205,7 +208,7 @@ class ElectricityPriceSensor(ElectricitySpotRateSensorBase):
 
 class SpotRateElectricitySensor(ElectricityPriceSensor):
     def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade, deprecated: bool = False) -> None:
-        self._deprecated = deprecated
+        self._deprecated: bool = deprecated
 
         if self._deprecated:
             self._attr_unique_id = f'sensor.current_spot_electricity_{trade.lower()}_price'
@@ -219,20 +222,24 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
                 self._attr_icon = 'mdi:cash-minus'
             case Trade.SELL:
                 self._attr_icon = 'mdi:cash-plus'
+            case Trade.SPOT:
+                self._attr_icon = "mdi:cash"
 
         self.entity_id = self._attr_unique_id
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def update(self, rate_data: Optional[SpotRateData]):
-        attributes: Dict[str, float] = {}
+    @override
+    def update(self, rate_data: SpotRateData | None):
+        attributes: dict[str, float] = {}
 
         if rate_data is None:
-            self._available = False
+            self._attr_available = False
             self._value = None
             self._attr = {}
             return
 
+        hourly_rates = None
         try:
             hourly_rates = self._get_trade_rates(rate_data)
             self._value = hourly_rates.current_hour.price
@@ -240,14 +247,16 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
             logger.error(
                 'Current time "%s" is not found in SpotRate values:\n%s',
                 rate_data.get_now(),
-                '\n\t'.join([dt.isoformat() for dt in hourly_rates.hour_for_dt.keys()]),
+                "\n\t".join([dt.isoformat() for dt in hourly_rates.hours_by_dt.keys()])
+                if hourly_rates
+                else "",
             )
-            self._available = False
+            self._attr_available = False
             return
 
         if self._deprecated:
             self._attr = {}
-            self._available = True
+            self._attr_available = True
             return
 
         for hour_data in hourly_rates.today_day.hours_by_dt.values():
@@ -260,24 +269,25 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
                 attributes[dt_local] = float(hour_data.price)
 
         self._attr = attributes
-        self._available = True
+        self._attr_available = True
 
 
 class HourFindSensor(ElectricityPriceSensor):
-    def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
+    def find_hour(self, _rate_data: SpotRateData | None) -> SpotRateHour | None:
         raise NotImplementedError()
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         hour = self.find_hour(rate_data)
 
         if hour is None:
-            self._available = False
+            self._attr_available = False
             self._value = None
             self._attr = {}
             logger.info('No value found for %s', self.unique_id)
             return
 
-        self._available = True
+        self._attr_available = True
         if self._value is None:
             logger.debug('%s initialized with %.2f at %s', self.unique_id, hour.price, hour.dt_utc.isoformat())
         elif round(hour.price or 0, 2) != round(self._value, 2):
@@ -301,7 +311,8 @@ class CheapestTodayElectricitySensor(HourFindSensor):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
+    @override
+    def find_hour(self, rate_data: SpotRateData | None) -> SpotRateHour | None:
         if not rate_data:
             return None
 
@@ -318,7 +329,8 @@ class CheapestTomorrowElectricitySensor(HourFindSensor):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
+    @override
+    def find_hour(self, rate_data: SpotRateData | None) -> SpotRateHour | None:
         if not rate_data:
             return None
 
@@ -338,7 +350,8 @@ class MostExpensiveTodayElectricitySensor(HourFindSensor):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
+    @override
+    def find_hour(self, rate_data: SpotRateData | None) -> SpotRateHour | None:
         if not rate_data:
             return None
 
@@ -355,7 +368,8 @@ class MostExpensiveTomorrowElectricitySensor(HourFindSensor):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def find_hour(self, rate_data: Optional[SpotRateData]) -> Optional[SpotRateHour]:
+    @override
+    def find_hour(self, rate_data: SpotRateData | None) -> SpotRateHour | None:
         if not rate_data:
             return None
 
@@ -379,11 +393,12 @@ class CurrentElectricityHourOrder(EnergyHourOrder):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         self._attr = {}
 
         if rate_data is None:
-            self._available = False
+            self._attr_available = False
             self._value = None
             return
 
@@ -398,7 +413,7 @@ class CurrentElectricityHourOrder(EnergyHourOrder):
         for hour in hourly_rates.today.hours_by_dt.values():
             self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
 
-        self._available = True
+        self._attr_available = True
 
 
 class TomorrowElectricityHourOrder(EnergyHourOrder):
@@ -410,23 +425,24 @@ class TomorrowElectricityHourOrder(EnergyHourOrder):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         self._attr = {}
         self._value = None
 
         if not rate_data:
-            self._available = False
+            self._attr_available = False
             return
 
         hourly_rates = self._get_trade_rates(rate_data)
         if hourly_rates.tomorrow is None:
-            self._available = False
+            self._attr_available = False
             return
 
         for hour in hourly_rates.tomorrow.hours_by_dt.values():
             self._attr[hour.dt_local.isoformat()] = [hour.cheapest_consecutive_order[1], float(round(hour.price, 3))]
 
-        self._available = True
+        self._attr_available = True
 
 
 #BC
@@ -443,17 +459,19 @@ class ConsecutiveCheapestElectricitySensor(ElectricityBinarySpotRateSensorBase):
             self._attr_unique_id = f'sensor.{trade.lower()}_electricity_is_cheapest_{self.hours}_hours_block'
             self._attr_translation_key = f'{trade.lower()}_electricity_is_cheapest_hours_block'
             self._attr_translation_placeholders = {
-                'hours': self.hours,
+                "hours": str(self.hours),
             }
 
         self.entity_id = self._attr_unique_id
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def _compute_attr(self, rate_data: SpotRateData, start: datetime, end: datetime) -> dict:
+    def _compute_attr(
+        self, rate_data: SpotRateData, start: datetime, end: datetime
+    ) -> dict[str, Any]:
         dt = start
-        min_price: Optional[Decimal] = None
-        max_price: Optional[Decimal] = None
+        min_price: Decimal | None = None
+        max_price: Decimal | None = None
         sum_price: Decimal = Decimal(0)
         count: int = 0
 
@@ -479,11 +497,12 @@ class ConsecutiveCheapestElectricitySensor(ElectricityBinarySpotRateSensorBase):
             'Mean': float(sum_price / count) if count > 0 else 0,
         }
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         self._attr = {}
 
         if not rate_data:
-            self._available = False
+            self._attr_available = False
             self._attr_is_on = None
             return
 
@@ -506,7 +525,7 @@ class ConsecutiveCheapestElectricitySensor(ElectricityBinarySpotRateSensorBase):
                     is_on = True
 
             self._attr_is_on = is_on
-            self._available = True
+            self._attr_available = True
 
 
 #BC
@@ -521,19 +540,20 @@ class HasTomorrowElectricityData(ElectricityBinarySpotRateSensorBase):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         self._attr = {}
 
         if not rate_data:
             self._attr_is_on = None
-            self._available = False
+            self._attr_available = False
             return
 
         self._attr_is_on = self._get_trade_rates(rate_data).tomorrow is not None
-        self._available = True
+        self._attr_available = True
 
 
-class GasSpotRateSensorBase(GasSpotRateSensorMixin, SensorEntity):
+class GasSpotRateSensorBase(GasSpotRateSensorMixin, SensorEntity):  # pyright: ignore[reportIncompatibleVariableOverride]
     pass
 
 
@@ -560,20 +580,23 @@ class TodayGasSensor(GasPriceSensor):
                 self._attr_icon = 'mdi:cash-minus'
             case Trade.SELL:
                 self._attr_icon = 'mdi:cash-plus'
+            case Trade.SPOT:
+                self._attr_icon = "mdi:cash"
 
         self.entity_id = self._attr_unique_id
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         self._attr = {}
 
         if rate_data is None:
-            self._available = False
+            self._attr_available = False
             self._value = None
             return
 
-        self._available = True
+        self._attr_available = True
         self._value = self._get_trade_rates(rate_data).today
 
 
@@ -587,21 +610,24 @@ class TomorrowGasSensor(GasPriceSensor):
                 self._attr_icon = 'mdi:cash-minus'
             case Trade.SELL:
                 self._attr_icon = 'mdi:cash-plus'
+            case Trade.SPOT:
+                self._attr_icon = "mdi:cash"
 
         self.entity_id = self._attr_unique_id
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         self._attr = {}
 
         if rate_data is None:
-            self._available = False
+            self._attr_available = False
             self._value = None
             return
 
         self._value = self._get_trade_rates(rate_data).tomorrow
-        self._available = self._value is not None
+        self._attr_available = self._value is not None
 
 
 class HasTomorrowGasData(GasBinarySpotRateSensorBase):
@@ -615,13 +641,14 @@ class HasTomorrowGasData(GasBinarySpotRateSensorBase):
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
-    def update(self, rate_data: Optional[SpotRateData]):
+    @override
+    def update(self, rate_data: SpotRateData | None):
         self._attr = {}
 
         if not rate_data:
             self._attr_is_on = None
-            self._available = False
+            self._attr_available = False
             return
 
         self._attr_is_on = self._get_trade_rates(rate_data).tomorrow is not None
-        self._available = True
+        self._attr_available = True

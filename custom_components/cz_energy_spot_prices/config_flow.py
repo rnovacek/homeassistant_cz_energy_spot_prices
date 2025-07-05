@@ -1,12 +1,13 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, cast, override
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
-from homeassistant.helpers.selector import TemplateSelector
-from homeassistant.helpers.template import Template, TemplateError
+from homeassistant.helpers.selector import TemplateSelector  # pyright: ignore[reportUnknownVariableType]
+from homeassistant.helpers.template import Template
+from homeassistant.exceptions import TemplateError
 
 from .const import DOMAIN, ADDITIONAL_COSTS_BUY_ELECTRICITY, ADDITIONAL_COSTS_SELL_ELECTRICITY, ADDITIONAL_COSTS_BUY_GAS
 
@@ -30,14 +31,21 @@ DATA_SCHEMA = vol.Schema({
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+        super().__init__()
+        self.data: dict[str, Any] = {}
+
+    @override
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
         return OptionsFlowHandler(config_entry)
 
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None):
-        errors: Dict[str, str] = {}
+    @override
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
         if user_input is not None:
             self.data = user_input
             if not errors:
@@ -59,7 +67,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         logger.debug('OptionsFlowHandler.__init__ %s; data [%s]; options [%s]', config_entry.unique_id, config_entry.data, config_entry.options)
 
     async def async_step_init(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ):# -> FlowResult:
         """Manage the options."""
         logger.debug(
@@ -82,7 +90,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         errors = {}
         if user_input is not None:
-            additional_costs_buy_electricity = user_input.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or ''
+            additional_costs_buy_electricity = cast(
+                str, user_input.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or ""
+            )
             if additional_costs_buy_electricity:
                 template = Template(additional_costs_buy_electricity)
                 try:
@@ -90,7 +100,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 except TemplateError:
                     errors[ADDITIONAL_COSTS_BUY_ELECTRICITY] = 'invalid_template'
 
-            additional_costs_sell_electricity = user_input.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or ''
+            additional_costs_sell_electricity = cast(
+                str, user_input.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or ""
+            )
             if additional_costs_sell_electricity:
                 template = Template(additional_costs_sell_electricity)
                 try:
@@ -98,7 +110,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 except TemplateError:
                     errors[ADDITIONAL_COSTS_SELL_ELECTRICITY] = 'invalid_template'
 
-            additional_costs_buy_gas = user_input.get(ADDITIONAL_COSTS_BUY_GAS) or ''
+            additional_costs_buy_gas = cast(
+                str, user_input.get(ADDITIONAL_COSTS_BUY_GAS) or ""
+            )
             if additional_costs_buy_gas:
                 template = Template(additional_costs_buy_gas)
                 try:
