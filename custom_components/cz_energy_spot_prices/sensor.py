@@ -202,6 +202,7 @@ class ElectricityPriceSensor(ElectricitySpotRateSensorBase):
 
     def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
         self._attr_native_unit_of_measurement = f'{settings.currency_human}/{settings.unit}'
+        self._attr_suggested_display_precision = 2
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
@@ -562,6 +563,7 @@ class GasPriceSensor(GasSpotRateSensorBase):
 
     def __init__(self, hass: HomeAssistant, settings: SpotRateSettings, coordinator: SpotRateCoordinator, trade: Trade) -> None:
         self._attr_native_unit_of_measurement = f'{settings.currency_human}/{settings.unit}'
+        self._attr_suggested_display_precision = 2
 
         super().__init__(hass=hass, settings=settings, coordinator=coordinator, trade=trade)
 
