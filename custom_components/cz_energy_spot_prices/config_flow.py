@@ -41,7 +41,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
     @override
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
@@ -60,12 +60,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-        self.options = dict(config_entry.options)
-        logger.debug('OptionsFlowHandler.__init__ %s; data [%s]; options [%s]', config_entry.unique_id, config_entry.data, config_entry.options)
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ):# -> FlowResult:
@@ -94,7 +88,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 str, user_input.get(ADDITIONAL_COSTS_BUY_ELECTRICITY) or ""
             )
             if additional_costs_buy_electricity:
-                template = Template(additional_costs_buy_electricity)
+                template = Template(additional_costs_buy_electricity, self.hass)
                 try:
                     template.ensure_valid()
                 except TemplateError:
@@ -104,7 +98,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 str, user_input.get(ADDITIONAL_COSTS_SELL_ELECTRICITY) or ""
             )
             if additional_costs_sell_electricity:
-                template = Template(additional_costs_sell_electricity)
+                template = Template(additional_costs_sell_electricity, self.hass)
                 try:
                     template.ensure_valid()
                 except TemplateError:
@@ -114,7 +108,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 str, user_input.get(ADDITIONAL_COSTS_BUY_GAS) or ""
             )
             if additional_costs_buy_gas:
-                template = Template(additional_costs_buy_gas)
+                template = Template(additional_costs_buy_gas, self.hass)
                 try:
                     template.ensure_valid()
                 except TemplateError:
