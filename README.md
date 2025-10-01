@@ -4,6 +4,8 @@
 
 Home Assistant integration that provides current Czech electricity spot prices based on [OTE](https://ote-cr.cz).
 
+If this integration saves (or earns) you some money, you can [buy me a coffee ☕](https://github.com/sponsors/rnovacek).
+
 ## Features
 
 - Provides real-time Czech electricity spot and gas prices from [OTE](https://ote-cr.cz).
