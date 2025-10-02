@@ -1,9 +1,8 @@
 import sys
 import logging
 from datetime import date, datetime, timedelta, time
-from types import CoroutineType
 from zoneinfo import ZoneInfo
-from typing import Any, Literal
+from typing import Literal
 from decimal import Decimal
 import asyncio
 import xml.etree.ElementTree as ET
@@ -29,20 +28,7 @@ QUERY_ELECTRICITY = """<?xml version="1.0" encoding="UTF-8" ?>
 </soapenv:Envelope>
 """
 
-QUERY_ELECTRICITY_LEGACY = """<?xml version="1.0" encoding="UTF-8" ?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://www.ote-cr.cz/schema/service/public">
-    <soapenv:Header/>
-    <soapenv:Body>
-        <pub:GetDamPriceE>
-            <pub:StartDate>{start}</pub:StartDate>
-            <pub:EndDate>{end}</pub:EndDate>
-            <pub:InEur>{in_eur}</pub:InEur>
-        </pub:GetDamPriceE>
-    </soapenv:Body>
-</soapenv:Envelope>
-"""
-
-QUERY_GAS = '''<?xml version="1.0" encoding="UTF-8" ?>
+QUERY_GAS = """<?xml version="1.0" encoding="UTF-8" ?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pub="http://www.ote-cr.cz/schema/service/public">
     <soapenv:Header/>
     <soapenv:Body>
@@ -52,7 +38,7 @@ QUERY_GAS = '''<?xml version="1.0" encoding="UTF-8" ?>
         </pub:GetImPriceG>
     </soapenv:Body>
 </soapenv:Envelope>
-'''
+"""
 
 # Response example - current
 
@@ -85,30 +71,6 @@ QUERY_GAS = '''<?xml version="1.0" encoding="UTF-8" ?>
 #   </SOAP-ENV:Body>
 # </SOAP-ENV:Envelope>
 
-# Response example - legacy
-# <?xml version="1.0" ?>
-# <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-#   <SOAP-ENV:Body>
-#     <GetDamPriceEResponse xmlns="http://www.ote-cr.cz/schema/service/public">
-#       <Result>
-#         <Item>
-#           <Date>2022-11-26</Date>
-#           <Hour>1</Hour>
-#           <Price>5184.14</Price>
-#           <Volume>4021.9</Volume>
-#         </Item>
-#         <Item>
-#           <Date>2022-11-26</Date>
-#           <Hour>2</Hour>
-#           <Price>5133.71</Price>
-#           <Volume>3596.0</Volume>
-#         </Item>
-#         ...
-#       </Result>
-#     </GetDamPriceEResponse>
-#   </SOAP-ENV:Body>
-# </SOAP-ENV:Envelope>
-
 
 class OTEFault(Exception):
     pass
@@ -116,9 +78,6 @@ class OTEFault(Exception):
 
 class InvalidFormat(OTEFault):
     pass
-
-
-ELECTRICITY_LEGACY_DEADLINE = date(2025, 9, 30)
 
 
 class SpotRate:
@@ -177,25 +136,9 @@ class SpotRate:
         query_start = first_day - timedelta(days=1)
         query_end = first_day + timedelta(days=1)
 
-        legacy_rates_task: CoroutineType[Any, Any, SpotRate.RateByDatetime | None] = (
-            self.noop()
-        )
-        if query_start <= ELECTRICITY_LEGACY_DEADLINE:
-            # Use legacy API for dates till 30.9.2025
-            legacy_rates_task = self._get_rates(
-                QUERY_ELECTRICITY_LEGACY.format(
-                    start=query_start.isoformat(),
-                    end=ELECTRICITY_LEGACY_DEADLINE.isoformat(),
-                    in_eur="true",
-                ),
-                unit,
-                kind="electricity_legacy",
-            )
-
-        # Use new API for dates after 1.10.2025
         rates_task = self._get_rates(
             self.get_electricity_query(
-                max(first_day, ELECTRICITY_LEGACY_DEADLINE + timedelta(days=1)),
+                query_start,
                 query_end,
             ),
             unit,
@@ -204,27 +147,19 @@ class SpotRate:
 
         if not in_eur:
             currency_task = CnbRate().get_current_rates()
-        else:
-            currency_task = self.noop()
-
-        legacy_result, rates_result, currency_result = await asyncio.gather(
-            legacy_rates_task, rates_task, currency_task
-        )
-
-        if legacy_result:
-            # Merge both results
-            rates = {**legacy_result, **rates_result}
-        else:
-            rates = rates_result
-
-        if currency_result:
-            eur_rate = currency_result["EUR"]
+            # Fetch both the prices and the currency rates concurrently
+            rates, currency = await asyncio.gather(rates_task, currency_task)
+            eur_rate = currency["EUR"]
+            # Convert the rates from EUR to CZK
             converted: SpotRate.RateByDatetime = {}
             for dt, value in rates.items():
                 converted[dt] = value * eur_rate
             return converted
 
-        return rates
+        else:
+            # Just fetch the prices
+            rates = await rates_task
+            return rates
 
     async def get_gas_rates(self, start: datetime, in_eur: bool, unit: EnergyUnit) -> RateByDatetime:
         assert start.tzinfo, 'Timezone must be set'
