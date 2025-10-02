@@ -167,24 +167,23 @@ class ConsecutiveCheapestElectricitySensor(ElectricityBinarySpotRateSensorBase):
 
         is_on = False
         hourly_rates = self._get_trade_rates(rate_data)
+        has_future_data = False
         for hour in hourly_rates.hours_by_dt.values():
             start = hour.dt_local - timedelta(hours=self.hours - 1)
             end = hour.dt_local + timedelta(hours=1, seconds=-1)
 
-            # Ignore start times before now, we only want future blocks
-            if end < hourly_rates.now:
-                continue
-
             if hour.cheapest_consecutive_order[self.hours] == 1:
-                if not self._attr:
-                    # Only put it there once, so to contains closes interval in the future
+                if not has_future_data:
+                    # We want to show earliest future block but if there's no future data, show the last past block
+                    if end >= hourly_rates.now:
+                        has_future_data = True
                     self._attr = self._compute_attr(rate_data, start, end)
 
                 if start <= hourly_rates.now <= end:
                     is_on = True
 
-            self._attr_is_on = is_on
-            self._attr_available = True
+        self._attr_is_on = is_on
+        self._attr_available = True
 
 
 class HasTomorrowElectricityData(ElectricityBinarySpotRateSensorBase):
