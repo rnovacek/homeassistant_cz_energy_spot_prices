@@ -1,3 +1,4 @@
+import aiohttp.client_exceptions
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone, time
@@ -354,10 +355,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData | None]):
         try:
             self._spot_rate_data = await self.fetch_data()
             self.async_set_updated_data(self._spot_rate_data)
-
-        except (OTEFault, asyncio.TimeoutError) as e:
+        except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
             self.retry_maybe(exc_info=e)
-
         except Exception:
             logger.exception('OTE request failed unexpectedly, not retrying')
 
@@ -381,7 +380,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[SpotRateData | None]):
             try:
                 self._spot_rate_data = await self.fetch_data()
                 logger.debug('SpotRateCoordinator._async_update_data fetched data: %s', self._spot_rate_data)
-            except (OTEFault, asyncio.TimeoutError) as e:
+            except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
                 self.retry_maybe(exc_info=e)
             except Exception:
                 logger.exception('OTE request failed unexpectedly during intial load')
