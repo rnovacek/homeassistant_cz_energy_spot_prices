@@ -1,3 +1,4 @@
+import aiohttp.client_exceptions
 import asyncio
 from collections.abc import Sequence
 import logging
@@ -554,7 +555,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
                 self._retry_attempt = 0
                 return data
 
-        except (OTEFault, asyncio.TimeoutError) as e:
+        except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
             logger.warning(
                 "Failed to update OTE prices, will retry in %d seconds: %s",
                 current_delay,
@@ -672,7 +673,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
                 self._retry_attempt = 0
                 return data
 
-        except (OTEFault, asyncio.TimeoutError) as e:
+        except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
             logger.warning(
                 "Failed to update CNB FX rates, will retry in %d seconds: %s",
                 current_delay,
