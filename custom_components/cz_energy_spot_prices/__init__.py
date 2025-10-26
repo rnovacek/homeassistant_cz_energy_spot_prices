@@ -11,7 +11,7 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.template import Template
 from jinja2 import TemplateError
 
-from .config_flow import CONF_COMMODITY, CONF_INTERVAL
+from .config_flow import CONF_COMMODITY, CONF_INTERVAL, ELECTRICITY
 
 from .const import (
     CONF_ALLOW_CROSS_MIDNIGHT,
@@ -57,7 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
 
     await _migrate_unique_ids(hass, config_entry)
 
-    commodity = Commodity(config_entry.data[CONF_COMMODITY])
+    commodity = Commodity(config_entry.data.get(CONF_COMMODITY, ELECTRICITY))
     currency = Currency(config_entry.data[CONF_CURRENCY])
     unit = EnergyUnit(config_entry.data[CONF_UNIT_OF_MEASUREMENT])
 
