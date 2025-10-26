@@ -1,8 +1,8 @@
-test_hass/home-assistant.log*
-test_hass/home-assistant_v2.db*
-test_hass/.storage*
-test_hass/custom_components
-test_hass/.HA_VERSION
+test_hass2/*
+test_hass/*
 __pycache__
 .venv
 .vscode
+.coverage
+# We don't include uv.lock on purpose as we want to use latest homeassistant in tests
+/uv.lock

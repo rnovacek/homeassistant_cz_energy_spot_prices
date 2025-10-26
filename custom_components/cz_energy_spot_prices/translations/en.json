@@ -1,14 +1,39 @@
 {
     "title": "Czech Energy Spot Prices",
+    "selector": {
+        "commodities": {
+            "options": {
+                "electricity": "Electricity",
+                "gas": "Gas"
+            }
+        },
+        "interval": {
+            "options": {
+                "60min": "60 minut",
+                "15min": "15 minut"
+            }
+        }
+    },
     "config": {
         "step": {
             "user": {
                 "title": "Spot prices configuration",
                 "data": {
                     "currency": "Currency",
-                    "unit_of_measurement": "Unit of energy"
+                    "unit_of_measurement": "Unit of energy",
+                    "commodity": "Commodity"
+                }
+            },
+            "details": {
+                "data": {
+                    "interval": "Interval for spot prices"
                 }
             }
+        },
+        "create_entry": {
+            "electricity_60min": "Electricity Spot 60min Rate in {currency}/{unit}",
+            "electricity_15min": "Electricity Spot 15min Rate in {currency}/{unit}",
+            "gas": "Gas Spot Rate in {currency}/{unit}"
         }
     },
     "options": {
@@ -17,76 +42,110 @@
                 "data": {
                     "additional_costs_buy_electricity": "Electricity cost when buying",
                     "additional_costs_sell_electricity": "Electricity cost when selling",
-                    "additional_costs_buy_gas": "Gas cost when buying"
+                    "additional_costs_buy_gas": "Gas cost when buying",
+                    "cheapest_blocks": "Cheapest consecutive hour blocks",
+                    "allow_cross_midnight": "Allow cheapest blocks to cross midnight"
                 },
                 "data_description": {
                     "additional_costs_buy_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current price, for example, to add 21 percent VAT to the price use `'{{ value * 1.21 }}`. Use `hour` to calculate the price for a specific hour if the rate varies by hour, such as high and low tariffs. The `hour` value is in UTC. If you need the local time, use `as_local(hour)`. If you do not enter a template, the sensor will not be created.",
                     "additional_costs_sell_electricity": "Template to calculate actual costs with additional fees. Use `value` to get current price, for example, to subtract fixed 0.25 operator fee use `'{{ value - 0.25 }}`. Use `hour` to calculate the price for a specific hour if the rate varies by hour, such as high and low tariffs. The `hour` value is in UTC. If you need the local time, use `as_local(hour)`. If you do not enter a template, the sensor will not be created.",
-                    "additional_costs_buy_gas": "Template to calculate actual costs with additional fees. Use `value` to get current spot price. You can use `day` in UTC for spot prices. If you do not enter a template, the sensor will not be created."
+                    "additional_costs_buy_gas": "Template to calculate actual costs with additional fees. Use `value` to get current spot price. You can use `day` in UTC for spot prices. If you do not enter a template, the sensor will not be created.",
+                    "cheapest_blocks": "Comma-separated list of hour block lengths. For each number, a binary sensor is created that turns ON during the cheapest consecutive hours in a day.",
+                    "allow_cross_midnight": "If enabled, blocks can span midnight (e.g., 23:00-01:00). Since spot prices reset daily, these blocks may shift when next day data arrives."
                 }
             }
+        },
+        "error": {
+            "invalid_format": "Invalid format, use comma-separted numbers"
         }
     },
     "entity": {
         "binary_sensor": {
             "spot_electricity_has_tomorrow_data": {
-                 "name": "Spot Electricity has Tomorrow Data"
+                "name": "Spot Electricity has Tomorrow Data"
             },
             "spot_electricity_is_cheapest": {
                 "name": "Current Spot Electricity is Cheapest"
             },
+            "spot_electricity_is_cheapest_15min": {
+                "name": "Current 15min Spot Electricity is Cheapest"
+            },
             "spot_electricity_is_cheapest_hours_block": {
                 "name": "Current Spot Electricity is Cheapest {hours} Hours Block"
             },
+            "spot_electricity_is_cheapest_hours_block_15min": {
+                "name": "Current 15min Spot Electricity is Cheapest {hours} Hours Block"
+            },
             "spot_gas_has_tomorrow_data": {
-                 "name": "Spot Gas has Tomorrow Data"
+                "name": "Spot Gas has Tomorrow Data"
             },
             "buy_electricity_is_cheapest": {
                 "name": "Current Buy Electricity is Cheapest"
             },
+            "buy_electricity_is_cheapest_15min": {
+                "name": "Current 15min Buy Electricity is Cheapest"
+            },
             "buy_electricity_is_cheapest_hours_block": {
                 "name": "Current Buy Electricity is Cheapest {hours} Hours Block"
+            },
+            "buy_electricity_is_cheapest_hours_block_15min": {
+                "name": "Current 15min Buy Electricity is Cheapest {hours} Hours Block"
             },
             "sell_electricity_is_cheapest": {
                 "name": "Current Sell Electricity is Cheapest"
             },
+            "sell_electricity_is_cheapest_15min": {
+                "name": "Current 15min Sell Electricity is Cheapest"
+            },
             "sell_electricity_is_cheapest_hours_block": {
                 "name": "Current Sell Electricity is Cheapest {hours} Hours Block"
+            },
+            "sell_electricity_is_cheapest_hours_block_15min": {
+                "name": "Current 15min Sell Electricity is Cheapest {hours} Hours Block"
             }
         },
         "sensor": {
             "current_spot_electricity_price": {
                 "name": "Current Spot Electricity Price"
             },
-            "spot_electricity_cheapest_today": {
+            "current_spot_electricity_price_15min": {
+                "name": "Current 15min Spot Electricity Price"
+            },
+            "spot_cheapest_electricity_today": {
                 "name": "Today Cheapest Spot Electricity"
             },
-            "spot_electricity_cheapest_tomorrow": {
+            "spot_cheapest_electricity_today_15min": {
+                "name": "Today Cheapest 15min Spot Electricity"
+            },
+            "spot_cheapest_electricity_tomorrow": {
                 "name": "Tomorrow Cheapest Spot Electricity"
             },
-            "spot_electricity_has_tomorrow_data": {
-                "name": "Spot Electricity has Tomorrow Data (Deprecated)"
+            "spot_cheapest_electricity_tomorrow_15min": {
+                "name": "Tomorrow Cheapest 15min Spot Electricity"
             },
-            "spot_electricity_is_cheapest": {
-                "name": "Current Spot Electricity is Cheapest (Deprecated)"
-            },
-            "spot_electricity_is_cheapest_hours_block": {
-                "name": "Current Spot Electricity is Cheapest {hours} Hours Block (Deprecated)"
-            },
-            "spot_electricity_hour_order_today": {
+            "current_spot_electricity_hour_order": {
                 "name": "Today Spot Electricity Hour Order"
             },
-            "spot_electricity_hour_order_tomorrow": {
+            "current_spot_electricity_15min_order": {
+                "name": "Today 15min Spot Electricity Hour Order"
+            },
+            "tomorrow_spot_electricity_hour_order": {
                 "name": "Tomorrow Spot Electricity Hour Order"
             },
-            "spot_electricity_most_expensive_today": {
+            "tomorrow_spot_electricity_15min_order": {
+                "name": "Tomorrow Spot Electricity 15min Order"
+            },
+            "spot_most_expensive_electricity_today": {
                 "name": "Today Most Expensive Spot Electricity"
             },
-            "spot_electricity_most_expensive_tomorrow": {
+            "spot_most_expensive_electricity_today_15min": {
+                "name": "Today Most Expensive 15min Spot Electricity"
+            },
+            "spot_most_expensive_electricity_tomorrow": {
                 "name": "Tomorrow Most Expensive Spot Electricity"
             },
-            "spot_gas_has_tomorrow_data": {
-                "name": "Spot Gas has Tomorrow Data (Deprecated)"
+            "spot_most_expensive_electricity_tomorrow_15min": {
+                "name": "Tomorrow Most Expensive 15min Spot Electricity"
             },
             "current_spot_gas_price": {
                 "name": "Today Spot Gas Price"
@@ -94,68 +153,95 @@
             "tomorrow_spot_gas_price": {
                 "name": "Tomorrow Spot Gas Price"
             },
-
-
-
             "current_buy_electricity_price": {
                 "name": "Current Buy Electricity Price"
             },
-            "current_spot_electricity_buy_price": {
-              "name": "Current Buy Electricity Price (Deprecated)"
+            "current_buy_electricity_price_15min": {
+                "name": "Current 15min Buy Electricity Price"
             },
-            "buy_electricity_cheapest_today": {
+            "buy_cheapest_electricity_today": {
                 "name": "Today Cheapest Buy Electricity Price"
             },
-            "buy_electricity_cheapest_tomorrow": {
+            "buy_cheapest_electricity_today_15min": {
+                "name": "Today Cheapest 15min Buy Electricity Price"
+            },
+            "buy_cheapest_electricity_tomorrow": {
                 "name": "Tomorrow Cheapest Buy Electricity Price"
             },
-            "buy_electricity_hour_order_today": {
+            "buy_cheapest_electricity_tomorrow_15min": {
+                "name": "Tomorrow Cheapest 15min Buy Electricity Price"
+            },
+            "current_buy_electricity_hour_order": {
                 "name": "Today Buy Electricity Hour Order"
             },
-            "buy_electricity_hour_order_tomorrow": {
+            "current_buy_electricity_15min_order": {
+                "name": "Today Buy Electricity 15min Order"
+            },
+            "tomorrow_buy_electricity_hour_order": {
                 "name": "Tomorrow Buy Electricity Hour Order"
             },
-            "buy_electricity_most_expensive_today": {
+            "tomorrow_buy_electricity_15min_order": {
+                "name": "Tomorrow Buy Electricity 15min Order"
+            },
+            "buy_most_expensive_electricity_today": {
                 "name": "Today Most Expensive Buy Electricity"
             },
-            "buy_electricity_most_expensive_tomorrow": {
+            "buy_most_expensive_electricity_today_15min": {
+                "name": "Today Most Expensive 15min Buy Electricity"
+            },
+            "buy_most_expensive_electricity_tomorrow": {
                 "name": "Tomorrow Most Expensive Buy Electricity"
+            },
+            "buy_most_expensive_electricity_tomorrow_15min": {
+                "name": "Tomorrow Most Expensive 15min Buy Electricity"
             },
             "current_buy_gas_price": {
                 "name": "Today Buy Gas Price"
             },
-            "current_spot_gas_buy_price": {
-                "name": "Today Buy Gas Price (Deprecated)"
-            },
             "tomorrow_buy_gas_price": {
                 "name": "Tomorrow Buy Gas Price"
             },
-
-
-
             "current_sell_electricity_price": {
                 "name": "Current Sell Electricity Price"
             },
-            "current_spot_electricity_sell_price": {
-                "name": "Current Sell Electricity Price (Deprecated)"
+            "current_sell_electricity_price_15min": {
+                "name": "Current 15min Sell Electricity Price"
             },
-            "sell_electricity_cheapest_today": {
+            "sell_cheapest_electricity_today": {
                 "name": "Today Cheapest Sell Electricity Price"
             },
-            "sell_electricity_cheapest_tomorrow": {
+            "sell_cheapest_electricity_today_15min": {
+                "name": "Today Cheapest 15min Sell Electricity Price"
+            },
+            "sell_cheapest_electricity_tomorrow": {
                 "name": "Tomorrow Cheapest Sell Electricity Price"
             },
-            "sell_electricity_hour_order_today": {
+            "sell_cheapest_electricity_tomorrow_15min": {
+                "name": "Tomorrow Cheapest 15min Sell Electricity Price"
+            },
+            "current_sell_electricity_hour_order": {
                 "name": "Today Sell Electricity Hour Order"
             },
-            "sell_electricity_hour_order_tomorrow": {
+            "current_sell_electricity_15min_order": {
+                "name": "Today Sell Electricity 15min Order"
+            },
+            "tomorrow_sell_electricity_hour_order": {
                 "name": "Tomorrow Sell Electricity Hour Order"
             },
-            "sell_electricity_most_expensive_today": {
+            "tomorrow_sell_electricity_15min_order": {
+                "name": "Tomorrow Sell Electricity 15min Order"
+            },
+            "sell_most_expensive_electricity_today": {
                 "name": "Today Most Expensive Sell Electricity"
             },
-            "sell_electricity_most_expensive_tomorrow": {
+            "sell_most_expensive_electricity_today_15min": {
+                "name": "Today Most Expensive 15min Sell Electricity"
+            },
+            "sell_most_expensive_electricity_tomorrow": {
                 "name": "Tomorrow Most Expensive Sell Electricity"
+            },
+            "sell_most_expensive_electricity_tomorrow_15min": {
+                "name": "Tomorrow Most Expensive 15min Sell Electricity"
             }
         }
     }

@@ -1,0 +1,283 @@
+{
+    "rates": [
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Austr\u00e1lie",
+            "currency": "dolar",
+            "amount": 1,
+            "currencyCode": "AUD",
+            "rate": 13.612
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Braz\u00edlie",
+            "currency": "real",
+            "amount": 1,
+            "currencyCode": "BRL",
+            "rate": 3.898
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Bulharsko",
+            "currency": "lev",
+            "amount": 1,
+            "currencyCode": "BGN",
+            "rate": 12.433
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "\u010c\u00edna",
+            "currency": "\u017een-min-pi",
+            "amount": 1,
+            "currencyCode": "CNY",
+            "rate": 2.944
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "D\u00e1nsko",
+            "currency": "koruna",
+            "amount": 1,
+            "currencyCode": "DKK",
+            "rate": 3.255
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "EMU",
+            "currency": "euro",
+            "amount": 1,
+            "currencyCode": "EUR",
+            "rate": 24.315
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Filip\u00edny",
+            "currency": "peso",
+            "amount": 100,
+            "currencyCode": "PHP",
+            "rate": 35.885
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Hongkong",
+            "currency": "dolar",
+            "amount": 1,
+            "currencyCode": "HKD",
+            "rate": 2.7
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Indie",
+            "currency": "rupie",
+            "amount": 100,
+            "currencyCode": "INR",
+            "rate": 23.911
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Indonesie",
+            "currency": "rupie",
+            "amount": 1000,
+            "currencyCode": "IDR",
+            "rate": 1.266
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Island",
+            "currency": "koruna",
+            "amount": 100,
+            "currencyCode": "ISK",
+            "rate": 17.147
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Izrael",
+            "currency": "nov\u00fd \u0161ekel",
+            "amount": 1,
+            "currencyCode": "ILS",
+            "rate": 6.359
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Japonsko",
+            "currency": "jen",
+            "amount": 100,
+            "currencyCode": "JPY",
+            "rate": 13.822
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Ji\u017en\u00ed Afrika",
+            "currency": "rand",
+            "amount": 1,
+            "currencyCode": "ZAR",
+            "rate": 1.202
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Kanada",
+            "currency": "dolar",
+            "amount": 1,
+            "currencyCode": "CAD",
+            "rate": 14.956
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Korejsk\u00e1 republika",
+            "currency": "won",
+            "amount": 100,
+            "currencyCode": "KRW",
+            "rate": 1.464
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Ma\u010farsko",
+            "currency": "forint",
+            "amount": 100,
+            "currencyCode": "HUF",
+            "rate": 6.243
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Malajsie",
+            "currency": "ringgit",
+            "amount": 1,
+            "currencyCode": "MYR",
+            "rate": 4.959
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Mexiko",
+            "currency": "peso",
+            "amount": 1,
+            "currencyCode": "MXN",
+            "rate": 1.14
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "MMF",
+            "currency": "ZP\u010c",
+            "amount": 1,
+            "currencyCode": "XDR",
+            "rate": 28.605
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Norsko",
+            "currency": "koruna",
+            "amount": 1,
+            "currencyCode": "NOK",
+            "rate": 2.089
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Nov\u00fd Z\u00e9land",
+            "currency": "dolar",
+            "amount": 1,
+            "currencyCode": "NZD",
+            "rate": 12.049
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Polsko",
+            "currency": "zlot\u00fd",
+            "amount": 1,
+            "currencyCode": "PLN",
+            "rate": 5.748
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Rumunsko",
+            "currency": "leu",
+            "amount": 1,
+            "currencyCode": "RON",
+            "rate": 4.784
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Singapur",
+            "currency": "dolar",
+            "amount": 1,
+            "currencyCode": "SGD",
+            "rate": 16.153
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "\u0160v\u00e9dsko",
+            "currency": "koruna",
+            "amount": 1,
+            "currencyCode": "SEK",
+            "rate": 2.228
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "\u0160v\u00fdcarsko",
+            "currency": "frank",
+            "amount": 1,
+            "currencyCode": "CHF",
+            "rate": 26.351
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Thajsko",
+            "currency": "baht",
+            "amount": 100,
+            "currencyCode": "THB",
+            "rate": 63.822
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Turecko",
+            "currency": "lira",
+            "amount": 100,
+            "currencyCode": "TRY",
+            "rate": 49.976
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "USA",
+            "currency": "dolar",
+            "amount": 1,
+            "currencyCode": "USD",
+            "rate": 20.978
+        },
+        {
+            "validFor": "2025-10-22",
+            "order": 206,
+            "country": "Velk\u00e1 Brit\u00e1nie",
+            "currency": "libra",
+            "amount": 1,
+            "currencyCode": "GBP",
+            "rate": 27.981
+        }
+    ]
+}
