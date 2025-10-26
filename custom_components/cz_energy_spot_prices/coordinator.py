@@ -500,16 +500,28 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         # Current time in Prague
         now_prague = now(PRAGUE_TZ)
 
-        # Determine tomorrow's date in Prague's calendar
-        tomorrow_date = (now_prague + timedelta(days=1)).date()
+        # OTE should publish new prices at 13:02
+        update_time = time(13, 2)
 
-        # Construct "tomorrow 14:02" in Prague local time
-        # This is a timezone-aware datetime
-        local_target = datetime.combine(
-            tomorrow_date,
-            time(13, 2),
-            tzinfo=PRAGUE_TZ,
-        )
+        if self._has_tomorrow_data():
+            # We already have data for tomorrow, next update will be tomorrow
+            local_target = datetime.combine(
+                (now_prague + timedelta(days=1)).date(),
+                update_time,
+                tzinfo=PRAGUE_TZ,
+            )
+        else:
+            # We don't have data for tomorrow, next update will be today
+            if update_time < now_prague.time():
+                # Update time already happened today but we don't have tomorrow data, schedule update soon (in 5 minutes)
+                local_target = now_prague + timedelta(minutes=5)
+            else:
+                # Update 13:02 today
+                local_target = datetime.combine(
+                    now_prague.date(),
+                    update_time,
+                    tzinfo=PRAGUE_TZ,
+                )
 
         # Convert to UTC (this handles DST properly)
         utc_time = local_target.astimezone(utc)
