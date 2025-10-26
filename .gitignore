@@ -4,3 +4,5 @@ __pycache__
 .venv
 .vscode
 .coverage
+# We don't include uv.lock on purpose as we want to use latest homeassistant in tests
+/uv.lock

@@ -1,0 +1,28 @@
+name: Run python test suite
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  test:
+    name: python
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # We don't include uv.lock on purpose as we want to use latest homeassistant in tests
+      - name: Install the project
+        run: uv sync --refresh --dev
+
+      - name: List dependencies
+        run: uv tree -d 1
+
+      - name: Run tests
+        run: uv run pytest -vv
