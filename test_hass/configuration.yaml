@@ -1,6 +1,6 @@
 
 logger:
-  default: warning
+  default: error
   logs:
     custom_components.cz_energy_spot_prices: debug
 

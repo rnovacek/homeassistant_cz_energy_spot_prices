@@ -13,4 +13,4 @@ if [ ! -L "$DIR/test_hass/custom_components" ]; then
     (cd "$DIR/test_hass" && ln -s "../custom_components" "custom_components")
 fi
 
-exec python3 -m homeassistant -c test_hass
+exec uv run --with homeassistant==2025.10.2 --with habluetooth==5.6.4 python3 -m homeassistant -c test_hass

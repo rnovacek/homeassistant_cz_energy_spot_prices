@@ -1,8 +1,10 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from typing import TypedDict, cast
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 import aiohttp
+
+from homeassistant.util.dt import utcnow
 
 
 class InvalidDateError(Exception):
@@ -33,6 +35,10 @@ class RateError(TypedDict):
     messageId: str
 
 
+class CnbRateError(Exception):
+    pass
+
+
 class CnbRate:
     RATES_URL: str = "https://api.cnb.cz/cnbapi/exrates/daily"
 
@@ -53,7 +59,9 @@ class CnbRate:
                         if error.get("errorCode") == "VALIDATION_ERROR":
                             raise InvalidDateError(f"Invalid date format: {day}")
 
-                    raise Exception(f"Error {response.status} while downloading rates")
+                    raise CnbRateError(
+                        f"Error {response.status} while downloading rates"
+                    )
                 text = cast(Rates, await response.json())
         return text
 
@@ -73,7 +81,7 @@ class CnbRate:
                 continue
 
         if not cnb_rates:
-            raise Exception("Could not download CNB rates for last 7 days")
+            raise CnbRateError("Could not download CNB rates for last 7 days")
 
         for rate in cnb_rates["rates"]:
             rates[rate["currencyCode"]] = Decimal(rate["rate"])
@@ -81,7 +89,7 @@ class CnbRate:
         return rates
 
     async def get_current_rates(self):
-        now = datetime.now(timezone.utc)
+        now = utcnow()
         day = now.astimezone(self._timezone).date()
 
         # Update if needed

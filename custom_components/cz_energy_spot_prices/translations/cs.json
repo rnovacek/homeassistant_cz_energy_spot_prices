@@ -1,14 +1,39 @@
 {
     "title": "Spotové ceny energií v Česku",
+    "selector": {
+        "commodities": {
+            "options": {
+                "electricity": "Elektřina",
+                "gas": "Plyn"
+            }
+        },
+        "interval": {
+            "options": {
+                "60min": "60 minut",
+                "15min": "15 minut"
+            }
+        }
+    },
     "config": {
         "step": {
             "user": {
                 "title": "Konfigurace pro spotové ceny",
                 "data": {
                     "currency": "Měna",
-                    "unit_of_measurement": "Jednotka energie"
+                    "unit_of_measurement": "Jednotka energie",
+                    "commodity": "Komodita"
+                }
+            },
+            "details": {
+                "data": {
+                    "interval": "Interval pro spotové ceny"
                 }
             }
+        },
+        "create_entry": {
+            "electricity_60min": "60minutová spotová cena elektřiny v {currency}/{unit}",
+            "electricity_15min": "15minutová spotová cena elektřiny v {currency}/{unit}",
+            "gas": "Spotová cena plynu v {currency}/{unit}"
         }
     },
     "options": {
@@ -17,14 +42,21 @@
                 "data": {
                     "additional_costs_buy_electricity": "Cena elektřiny při nákupu",
                     "additional_costs_sell_electricity": "Cena elektřiny při prodeji",
-                    "additional_costs_buy_gas": "Cena plynu při nákupu"
+                    "additional_costs_buy_gas": "Cena plynu při nákupu",
+                    "cheapest_blocks": "Nejlevnější bloky po sobě jdoucích hodin",
+                    "allow_cross_midnight": "Povolit přechod nejlevnějších bloků přes půlnoc"
                 },
                 "data_description": {
                     "additional_costs_buy_electricity": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny, například pro přidání 21 procent DPH použijte `'{{ value * 1.21 }}`. Použijte `hour` pro výpočet ceny v dané hodině, pokud se sazba v jednotlivých hodinách liší, například pro vysoký a nízký tarif. Hodnota `hour` je v UTC. Pokud potřebujete lokální čas použijte `as_local(hour)`. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen.",
                     "additional_costs_sell_electricity": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny, například pro odečtení fixního poplatku operátora ve výši 0.25 použijte `'{{ value - 0.25 }}`.  Použijte `hour` pro výpočet ceny v dané hodině, pokud se sazba v jednotlivých hodinách liší, například pro vysoký a nízký tarif. Hodnota `hour` je v UTC. Pokud potřebujete lokální čas použijte `as_local(hour)`. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen.",
-                    "additional_costs_buy_gas": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny. Můžete použít `day` v UTC pro spotové ceny. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen."
+                    "additional_costs_buy_gas": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny. Můžete použít `day` v UTC pro spotové ceny. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen.",
+                    "cheapest_blocks": "Seznam délek bloků v hodinách oddělený čárkami. Pro každou délku se vytvoří binární senzor, který bude zapnutý během nejlevnějších po sobě jdoucích hodin dne.",
+                    "allow_cross_midnight": "Pokud je povoleno, bloky mohou přeskočit půlnoc (např. 23:00–01:00). Protože se ceny zveřejňují po dnech, tyto bloky se mohou po načtení nových dat změnit."
                 }
             }
+        },
+        "error": {
+            "invalid_format": "Neplatný formát, použijte čísla oddělená čárkami"
         }
     },
     "entity": {
@@ -35,8 +67,14 @@
             "spot_electricity_is_cheapest": {
                 "name": "Aktuální spotová cena elektřiny je nejlevnější"
             },
+            "spot_electricity_is_cheapest_15min": {
+                "name": "Aktuální 15minutová spotová cena elektřiny je nejlevnější"
+            },
             "spot_electricity_is_cheapest_hours_block": {
                 "name": "Aktuální blok {hours} hodin spotových cen elektřiny je nejlevnější"
+            },
+            "spot_electricity_is_cheapest_hours_block_15min": {
+                "name": "Aktuální blok {hours} hodin 15minutových spotových cen elektřiny je nejlevnější"
             },
             "spot_gas_has_tomorrow_data": {
                 "name": "K dispozici zítřejší spotové ceny plynu"
@@ -44,49 +82,70 @@
             "buy_electricity_is_cheapest": {
                 "name": "Aktuální nákupní cena elektřiny je nejlevnější"
             },
+            "buy_electricity_is_cheapest_15min": {
+                "name": "Aktuální 15minutová nákupní cena elektřiny je nejlevnější"
+            },
             "buy_electricity_is_cheapest_hours_block": {
                 "name": "Aktuální blok {hours} hodin nákupních cen elektřiny je nejlevnější"
+            },
+            "buy_electricity_is_cheapest_hours_block_15min": {
+                "name": "Aktuální blok {hours} hodin 15minutových nákupních cen elektřiny je nejlevnější"
             },
             "sell_electricity_is_cheapest": {
                 "name": "Aktuální prodejní cena elektřiny je nejlevnější"
             },
+            "sell_electricity_is_cheapest_15min": {
+                "name": "Aktuální 15minutová prodejní cena elektřiny je nejlevnější"
+            },
             "sell_electricity_is_cheapest_hours_block": {
                 "name": "Aktuální blok {hours} hodin prodejních cen elektřiny je nejlevnější"
+            },
+            "sell_electricity_is_cheapest_hours_block_15min": {
+                "name": "Aktuální blok {hours} hodin 15minutových prodejních cen elektřiny je nejlevnější"
             }
         },
         "sensor": {
             "current_spot_electricity_price": {
                 "name": "Aktuální spotová cena elektřiny"
             },
-            "spot_electricity_cheapest_today": {
+            "current_spot_electricity_price_15min": {
+                "name": "Aktuální 15minutová spotová cena elektřiny"
+            },
+            "spot_cheapest_electricity_today": {
                 "name": "Dnešní nejlevnější spotová cena elektřiny"
             },
-            "spot_electricity_cheapest_tomorrow": {
+            "spot_cheapest_electricity_today_15min": {
+                "name": "Dnešní nejlevnější 15minutová spotová cena elektřiny"
+            },
+            "spot_cheapest_electricity_tomorrow": {
                 "name": "Zítřejší nejlevnější spotová cena elektřiny"
             },
-            "spot_electricity_has_tomorrow_data": {
-                "name": "K dispozici zítřejší spotové ceny elektřiny (Zastaralé)"
+            "spot_cheapest_electricity_tomorrow_15min": {
+                "name": "Zítřejší nejlevnější 15minutová spotová cena elektřiny"
             },
-            "spot_electricity_is_cheapest": {
-                "name": "Aktuální spotová cena elektřiny je nejlevnější (Zastaralé)"
-            },
-            "spot_electricity_is_cheapest_hours_block": {
-                "name": "Aktuální blok {hours} hodin spotových cen elektřiny je nejlevnější (Zastaralé)"
-            },
-            "spot_electricity_hour_order_today": {
+            "current_spot_electricity_hour_order": {
                 "name": "Dnešní pořadí hodin spotových cen elektřiny"
             },
-            "spot_electricity_hour_order_tomorrow": {
-                "name": "Pořadí zítřejších hodin spotových cen elektřiny"
+            "current_spot_electricity_15min_order": {
+                "name": "Dnešní pořadí 15minutový spotových cen elektřiny"
             },
-            "spot_electricity_most_expensive_today": {
+            "tomorrow_spot_electricity_hour_order": {
+                "name": "Zítřejší pořadí hodin spotových cen elektřiny"
+            },
+            "tomorrow_spot_electricity_15min_order": {
+                "name": "Zítřejší pořadí 15minutových spotových cen elektřiny"
+            },
+            "spot_most_expensive_electricity_today": {
                 "name": "Dnešní nejdražší spotová cena elektřiny"
             },
-            "spot_electricity_most_expensive_tomorrow": {
+            "spot_most_expensive_electricity_today_15min": {
+                "name": "Dnešní nejdražší 15minutová spotová cena elektřiny"
+            },
+            "spot_most_expensive_electricity_tomorrow": {
                 "name": "Zítřejší nejdražší spotová cena elektřiny"
             },
-            "spot_gas_has_tomorrow_data": {
-                "name": "K dispozici zítřejší spotové ceny plynu (Zastaralé)"
+            "spot_most_expensive_electricity_tomorrow_15min": {
+                "name": "Zítřejší nejdražší 15minutová spotová cena elektřiny"
             },
             "current_spot_gas_price": {
                 "name": "Aktuální spotová cena plynu"
@@ -94,68 +153,95 @@
             "tomorrow_spot_gas_price": {
                 "name": "Zítřejší spotová cena plynu"
             },
-
-
-
             "current_buy_electricity_price": {
                 "name": "Aktuální nákupní cena elektřiny"
             },
-            "current_spot_electricity_buy_price": {
-              "name": "Aktuální nákupní cena elektřiny (Zastaralé)"
+            "current_buy_electricity_price_15min": {
+                "name": "Aktuální 15minutová nákupní cena elektřiny"
             },
-            "buy_electricity_cheapest_today": {
+            "buy_cheapest_electricity_today": {
                 "name": "Dnešní nejlevnější nákupní cena elektřiny"
             },
-            "buy_electricity_cheapest_tomorrow": {
+            "buy_cheapest_electricity_today_15min": {
+                "name": "Dnešní nejlevnější 15minutová nákupní cena elektřiny"
+            },
+            "buy_cheapest_electricity_tomorrow": {
                 "name": "Zítřejší nejlevnější nákupní cena elektřiny"
             },
-            "buy_electricity_hour_order_today": {
+            "buy_cheapest_electricity_tomorrow_15min": {
+                "name": "Zítřejší nejlevnější 15minutová nákupní cena elektřiny"
+            },
+            "current_buy_electricity_hour_order": {
                 "name": "Dnešní pořadí hodin nákupních cen elektřiny"
             },
-            "buy_electricity_hour_order_tomorrow": {
-                "name": "Pořadí zítřejších hodin nákupních cen elektřiny"
+            "current_buy_electricity_15min_order": {
+                "name": "Dnešní pořadí 15minutových nákupních cen elektřiny"
             },
-            "buy_electricity_most_expensive_today": {
+            "tomorrow_buy_electricity_hour_order": {
+                "name": "Zítřejší pořadí hodin nákupních cen elektřiny"
+            },
+            "tomorrow_buy_electricity_15min_order": {
+                "name": "Zítřejší pořadí 15minutových nákupních cen elektřiny"
+            },
+            "buy_most_expensive_electricity_today": {
                 "name": "Dnešní nejdražší nákupní cena elektřiny"
             },
-            "buy_electricity_most_expensive_tomorrow": {
+            "buy_most_expensive_electricity_today_15min": {
+                "name": "Dnešní nejdražší 15minutová nákupní cena elektřiny"
+            },
+            "buy_most_expensive_electricity_tomorrow": {
                 "name": "Zítřejší nejdražší nákupní cena elektřiny"
+            },
+            "buy_most_expensive_electricity_tomorrow_15min": {
+                "name": "Zítřejší nejdražší 15minutová nákupní cena elektřiny"
             },
             "current_buy_gas_price": {
                 "name": "Aktuální nákupní cena plynu"
             },
-            "current_spot_gas_buy_price": {
-                "name": "Aktuální nákupní cena plynu (Zastaralé)"
-            },
             "tomorrow_buy_gas_price": {
                 "name": "Zítřejší nákupní cena plynu"
             },
-
-
-
             "current_sell_electricity_price": {
                 "name": "Aktuální prodejní cena elektřiny"
             },
-            "current_spot_electricity_sell_price": {
-                "name": "Aktuální prodejní cena elektřiny (Zastaralé)"
+            "current_sell_electricity_price_15min": {
+                "name": "Aktuální 15minutová prodejní cena elektřiny"
             },
-            "sell_electricity_cheapest_today": {
+            "sell_cheapest_electricity_today": {
                 "name": "Dnešní nejlevnější prodejní cena elektřiny"
             },
-            "sell_electricity_cheapest_tomorrow": {
+            "sell_cheapest_electricity_today_15min": {
+                "name": "Dnešní nejlevnější 15minutová prodejní cena elektřiny"
+            },
+            "sell_cheapest_electricity_tomorrow": {
                 "name": "Zítřejší nejlevnější prodejní cena elektřiny"
             },
-            "sell_electricity_hour_order_today": {
+            "sell_cheapest_electricity_tomorrow_15min": {
+                "name": "Zítřejší nejlevnější 15minutová prodejní cena elektřiny"
+            },
+            "current_sell_electricity_hour_order": {
                 "name": "Dnešní pořadí hodin prodejních cen elektřiny"
             },
-            "sell_electricity_hour_order_tomorrow": {
-                "name": "Pořadí zítřejších hodin prodejních cen elektřiny"
+            "current_sell_electricity_15min_order": {
+                "name": "Dnešní pořadí 15minutových prodejních cen elektřiny"
             },
-            "sell_electricity_most_expensive_today": {
+            "tomorrow_sell_electricity_hour_order": {
+                "name": "Zítřejší pořadí hodin prodejních cen elektřiny"
+            },
+            "tomorrow_sell_electricity_15min_order": {
+                "name": "Zítřejší pořadí 15minutových prodejních cen elektřiny"
+            },
+            "sell_most_expensive_electricity_today": {
                 "name": "Dnešní nejdražší prodejní cena elektřiny"
             },
-            "sell_electricity_most_expensive_tomorrow": {
+            "sell_most_expensive_electricity_today_15min": {
+                "name": "Dnešní nejdražší 15minutová prodejní cena elektřiny"
+            },
+            "sell_most_expensive_electricity_tomorrow": {
                 "name": "Zítřejší nejdražší prodejní cena elektřiny"
+            },
+            "sell_most_expensive_electricity_tomorrow_15min": {
+                "name": "Zítřejší nejdražší 15minutová prodejní cena elektřiny"
             }
         }
     }

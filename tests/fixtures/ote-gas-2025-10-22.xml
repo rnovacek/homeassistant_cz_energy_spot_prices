@@ -1,0 +1,33 @@
+<?xml version="1.0" ?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+	<SOAP-ENV:Body>
+		<GetImPriceGResponse xmlns="http://www.ote-cr.cz/schema/service/public">
+			<Result>
+				<Item>
+					<Date>2025-10-21</Date>
+					<Price>34.07</Price>
+					<Volume>16026.4</Volume>
+					<MinPrice>33.47</MinPrice>
+					<MaxPrice>34.50</MaxPrice>
+					<IndexOte>34.065</IndexOte>
+				</Item>
+				<Item>
+					<Date>2025-10-22</Date>
+					<Price>34.05</Price>
+					<Volume>8453.4</Volume>
+					<MinPrice>33.70</MinPrice>
+					<MaxPrice>34.48</MaxPrice>
+					<IndexOte>34.054</IndexOte>
+				</Item>
+				<Item>
+					<Date>2025-10-23</Date>
+					<Price>34.31</Price>
+					<Volume>11575.8</Volume>
+					<MinPrice>33.77</MinPrice>
+					<MaxPrice>34.80</MaxPrice>
+					<IndexOte>34.312</IndexOte>
+				</Item>
+			</Result>
+		</GetImPriceGResponse>
+	</SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
