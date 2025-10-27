@@ -22,6 +22,7 @@ from .const import (
     CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY,
     CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY,
     CONF_ADDITIONAL_COSTS_BUY_GAS,
+    Commodity,
     SpotRateIntervalType,
 )
 
@@ -234,8 +235,8 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithReload):
         else:
             user_input = dict(self.config_entry.options)
 
-        commodity = self.config_entry.data.get(CONF_COMMODITY)
-        if commodity == GAS:
+        commodity = Commodity(self.config_entry.data.get(CONF_COMMODITY, ELECTRICITY))
+        if commodity == Commodity.Gas:
             options_schema = vol.Schema(
                 {
                     vol.Optional(
@@ -244,7 +245,7 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithReload):
                     ): TemplateSelector(),
                 }
             )
-        elif commodity == ELECTRICITY:
+        elif commodity == Commodity.Electricity:
             options_schema = vol.Schema(
                 {
                     vol.Optional(
