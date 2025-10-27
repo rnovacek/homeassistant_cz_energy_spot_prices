@@ -1,3 +1,4 @@
+from random import randint
 import aiohttp.client_exceptions
 import asyncio
 from collections.abc import Sequence
@@ -35,6 +36,7 @@ PRAGUE_TZ = ZoneInfo("Europe/Prague")
 
 def get_now(zoneinfo: timezone | ZoneInfo = timezone.utc) -> datetime:
     return now(zoneinfo)
+
 
 @dataclass
 class EntryConfig:
@@ -470,15 +472,23 @@ def find_cheapest_window(
 
 @final
 class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
+    # OTE says that data for the next day should be available at 13:02 CE(S)T (Prague) time,
+    # but in reality they never are. We'll start the update 13:10 with random 2 minutes jitter and
+    # then try every 2 minutes until we get next day data.
+    DATA_AVAILABLE_TIME = time(13, 10)
+    JITTER_SECONDS = 120
+    DATA_RESCHEDULE_DELAY = 120
+
     def __init__(
         self,
         hass: HomeAssistant,
         commodity: Commodity,
     ):
+        logger.debug("SpotRateCoordinator[%s].__init__", commodity)
         super().__init__(
             hass,
             logger,
-            name="Czech Energy Spot Prices [SpotRateCoordinator]",
+            name=f"Czech Energy Spot Prices [SpotRateCoordinator] for {commodity}",
         )
         self.hass = hass
         self._spot_rate = SpotRate()
@@ -500,28 +510,29 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         # Current time in Prague
         now_prague = now(PRAGUE_TZ)
 
-        # OTE should publish new prices at 13:02
-        update_time = time(13, 2)
-
-        if self._has_tomorrow_data():
+        if self.has_tomorrow_data():
             # We already have data for tomorrow, next update will be tomorrow
             local_target = datetime.combine(
                 (now_prague + timedelta(days=1)).date(),
-                update_time,
+                self.DATA_AVAILABLE_TIME,
                 tzinfo=PRAGUE_TZ,
             )
+            # Apply jitter to prevent everyone updating at the same time
+            local_target += timedelta(seconds=randint(1, self.JITTER_SECONDS))
         else:
             # We don't have data for tomorrow, next update will be today
-            if update_time < now_prague.time():
+            if self.DATA_AVAILABLE_TIME < now_prague.time():
                 # Update time already happened today but we don't have tomorrow data, schedule update soon (in 5 minutes)
                 local_target = now_prague + timedelta(minutes=5)
             else:
                 # Update 13:02 today
                 local_target = datetime.combine(
                     now_prague.date(),
-                    update_time,
+                    self.DATA_AVAILABLE_TIME,
                     tzinfo=PRAGUE_TZ,
                 )
+                # Apply jitter to prevent everyone updating at the same time
+                local_target += timedelta(seconds=randint(1, self.JITTER_SECONDS))
 
         # Convert to UTC (this handles DST properly)
         utc_time = local_target.astimezone(utc)
@@ -535,16 +546,25 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
     async def async_stop(self):
         """Cancel scheduled jobs."""
+        logger.debug("SpotRateCoordinator[%s].async_stop", self._commodity)
         if self._update_schedule:
             self._update_schedule()
             self._update_schedule = None
 
     @callback
-    def on_schedule(self, _dt: datetime):
+    def on_schedule(self, dt: datetime):
+        logger.debug(
+            "SpotRateCoordinator[%s].on_schedule called at %s", self._commodity, dt
+        )
+
+        if self._update_schedule:
+            self._update_schedule()
+            self._update_schedule = None
+
         _ = self.hass.async_create_task(self.async_request_refresh())
 
     async def _fetch_data(self):
-        logger.debug("SpotRateCoordinator.fetch_data")
+        logger.debug("SpotRateCoordinator[%s]._fetch_data", self._commodity)
 
         zoneinfo = ZoneInfo(self.hass.config.time_zone)
         start = now(zoneinfo)
@@ -559,7 +579,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         return rates
 
     async def _fetch_data_with_retry(self):
-        logger.debug("SpotRateCoordinator.update_data")
+        logger.debug("SpotRateCoordinator[%s]._fetch_data_with_retry", self._commodity)
         current_delay = cast(int, 2**self._retry_attempt)
         try:
             async with async_timeout.timeout(30):
@@ -588,25 +608,35 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
         raise UpdateFailed("Failed to update OTE prices")
 
-    def _has_tomorrow_data(self) -> bool:
+    def has_tomorrow_data(self) -> bool:
         if not self._spot_rate_data:
             return False
 
-        # When DST changes, it might be 11 or 13 hours, but that doesn't matter
-        # for just checking if tomorrow data are available
-        noon_tomorrow = now(PRAGUE_TZ).replace(
-            hour=12, minute=0, second=0, microsecond=0
-        ) + timedelta(days=1)
+        if self._commodity == Commodity.Gas:
+            # We have gas data for tomorrow if there is a future record
+            for dt in self._spot_rate_data[SpotRateIntervalType.Day].keys():
+                if dt > now():
+                    return True
+            return False
 
-        return (
-            self._spot_rate_data[SpotRateIntervalType.QuarterHour].get(noon_tomorrow)
-            is not None
-        )
+        else:
+            # When DST changes, it might be 11 or 13 hours, but that doesn't matter
+            # for just checking if tomorrow data are available
+            noon_tomorrow = now(PRAGUE_TZ).replace(
+                hour=12, minute=0, second=0, microsecond=0
+            ) + timedelta(days=1)
 
-    def _is_tomorrow_data_available(self) -> bool:
-        """New prices should be published on 13:02 Prague (CET or CEST) time"""
+            return (
+                self._spot_rate_data[SpotRateIntervalType.QuarterHour].get(
+                    noon_tomorrow
+                )
+                is not None
+            )
+
+    def is_tomorrow_data_available(self) -> bool:
+        """New prices should be published on 13:10 Prague (CET or CEST) time"""
         now_cet = now(PRAGUE_TZ)
-        return now_cet.hour >= 13 and now_cet.minute >= 2
+        return now_cet.time() >= self.DATA_AVAILABLE_TIME
 
     @override
     async def _async_update_data(self):
@@ -615,23 +645,28 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
-        logger.debug("SpotRateCoordinator._async_update_data")
+        logger.debug("SpotRateCoordinator[%s]._async_update_data", self._commodity)
 
         self._spot_rate_data = await self._fetch_data_with_retry()
-        if not self._has_tomorrow_data() and self._is_tomorrow_data_available():
+        if not self.has_tomorrow_data() and self.is_tomorrow_data_available():
             # Tomorrow data should be available but are not => schedule update soon
             logger.info(
-                "Tomorrow electricity data should be available in OTE but are not => rescheduling in 5 minutes"
+                "SpotRateCoordinator[%s] tomorrow data should be available in OTE but are not => rescheduling in 2 minutes",
+                self._commodity,
             )
             self._update_schedule = event.async_call_later(
                 self.hass,
-                delay=5 * 60,  # Try again in 5 minutes
-                action=lambda dt: self.async_request_refresh(),
+                delay=self.DATA_RESCHEDULE_DELAY,  # Try again in 2 minutes
+                action=self.on_schedule,
             )
         else:
-            # Schedule the update for tommorow 13:02
+            # Schedule the update for tommorow
             dt = self._schedule_next_update()
-            logger.info("Electricity data updated, scheduling next update at %s", dt)
+            logger.info(
+                "SpotRateCoordinator[%s] data updated, scheduling next update at %s",
+                self._commodity,
+                dt,
+            )
 
         return self._spot_rate_data
 
@@ -663,6 +698,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
     async def async_stop(self):
         """Cancel scheduled jobs."""
         if self._update_schedule:
+            logger.debug("Unscheduling FX coordinator")
             self._update_schedule()
             self._update_schedule = None
 
@@ -736,7 +772,7 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
         super().__init__(
             hass,
             logger,
-            name="Czech Energy Spot Prices [EntryCoordinator]",
+            name=f"Czech Energy Spot Prices [EntryCoordinator {config.unit, config.currency, config.commodity, config.interval}]",
         )
 
         self._unschedule = event.async_track_utc_time_change(
