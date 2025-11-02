@@ -219,6 +219,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Unload config entry."""
+    logger.debug("async_unload_entry %s", config_entry.unique_id)
     unload_ok = await hass.config_entries.async_unload_platforms(
         config_entry, PLATFORMS
     )

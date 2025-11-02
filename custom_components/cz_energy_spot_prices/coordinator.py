@@ -579,6 +579,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         return rates
 
     async def _fetch_data_with_retry(self):
+        is_first_run = self.data is None
+
         logger.debug("SpotRateCoordinator[%s]._fetch_data_with_retry", self._commodity)
         current_delay = cast(int, 2**self._retry_attempt)
         try:
@@ -600,11 +602,17 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
                 current_delay,
             )
 
+        self._retry_attempt += 1
+
         self._update_schedule = event.async_call_later(
             self.hass,
             delay=current_delay,
-            action=lambda dt: self.async_request_refresh(),
+            action=self.on_schedule,
         )
+
+        if is_first_run:
+            # Do not mark the integration as failed on first run, let it retry silently
+            return None
 
         raise UpdateFailed("Failed to update OTE prices")
 
@@ -648,6 +656,10 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         logger.debug("SpotRateCoordinator[%s]._async_update_data", self._commodity)
 
         self._spot_rate_data = await self._fetch_data_with_retry()
+        if self._spot_rate_data is None:
+            # Update failed, new update is already scheduled
+            return None
+
         if not self.has_tomorrow_data() and self.is_tomorrow_data_available():
             # Tomorrow data should be available but are not => schedule update soon
             logger.info(

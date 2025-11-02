@@ -182,7 +182,7 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
 
         try:
             window = trade_rates.cheapest_windows[self.hours]
-        except ValueError:
+        except KeyError:
             if self.hours is None:
                 logger.error("Unable to find cheapest interval")
             else:
