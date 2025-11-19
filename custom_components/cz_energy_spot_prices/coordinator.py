@@ -496,6 +496,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         self._update_schedule = None
         self._retry_attempt = 0
         self._commodity = commodity
+        self._next_update: datetime | None = None
 
         # TODO: persist data using
         # self._store = storage.Store(hass, STORAGE_VERSION, STORAGE_KEY)
@@ -537,11 +538,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         # Convert to UTC (this handles DST properly)
         utc_time = local_target.astimezone(utc)
 
-        self._update_schedule = event.async_track_point_in_utc_time(
-            hass=self.hass,
-            action=self.on_schedule,
-            point_in_time=utc_time,
-        )
+        self.schedule_update(point_in_time=utc_time)
         return utc_time
 
     async def async_stop(self):
@@ -556,6 +553,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         logger.debug(
             "SpotRateCoordinator[%s].on_schedule called at %s", self._commodity, dt
         )
+
+        breakpoint()
 
         if self._update_schedule:
             self._update_schedule()
@@ -604,11 +603,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
         self._retry_attempt += 1
 
-        self._update_schedule = event.async_call_later(
-            self.hass,
-            delay=current_delay,
-            action=self.on_schedule,
-        )
+        self.schedule_update(delay=current_delay)
 
         if is_first_run:
             # Do not mark the integration as failed on first run, let it retry silently
@@ -646,6 +641,41 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         now_cet = now(PRAGUE_TZ)
         return now_cet.time() >= self.DATA_AVAILABLE_TIME
 
+    def schedule_update(
+        self, *, delay: float | None = None, point_in_time: datetime | None = None
+    ):
+        """Schedule on_schedule to be called after delay seconds or at point_in_time."""
+        if self._update_schedule:
+            self._update_schedule()
+            self._update_schedule = None
+
+        if point_in_time is not None:
+            logger.debug(
+                "SpotRateCoordinator[%s] scheduling update at %s",
+                self._commodity,
+                point_in_time,
+            )
+            self._update_schedule = event.async_track_point_in_utc_time(
+                hass=self.hass,
+                action=self.on_schedule,
+                point_in_time=point_in_time,
+            )
+            self._next_update = point_in_time
+        elif delay is not None:
+            logger.debug(
+                "SpotRateCoordinator[%s] scheduling update in %s seconds",
+                self._commodity,
+                delay,
+            )
+            self._update_schedule = event.async_call_later(
+                self.hass,
+                delay=delay,
+                action=self.on_schedule,
+            )
+            self._next_update = now() + timedelta(seconds=delay)
+        else:
+            raise ValueError("Either delay or point_in_time must be provided")
+
     @override
     async def _async_update_data(self):
         """Fetch data from API endpoint.
@@ -653,6 +683,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
+
         logger.debug("SpotRateCoordinator[%s]._async_update_data", self._commodity)
 
         self._spot_rate_data = await self._fetch_data_with_retry()
@@ -666,11 +697,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
                 "SpotRateCoordinator[%s] tomorrow data should be available in OTE but are not => rescheduling in 2 minutes",
                 self._commodity,
             )
-            self._update_schedule = event.async_call_later(
-                self.hass,
-                delay=self.DATA_RESCHEDULE_DELAY,  # Try again in 2 minutes
-                action=self.on_schedule,
-            )
+            # Try again in 2 minutes
+            self.schedule_update(delay=self.DATA_RESCHEDULE_DELAY)
         else:
             # Schedule the update for tommorow
             dt = self._schedule_next_update()
