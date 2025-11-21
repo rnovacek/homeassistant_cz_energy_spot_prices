@@ -206,9 +206,107 @@ class IntervalSpotRateData:
 
         for block in config.all_cheapest_blocks():
             if config.cheapest_blocks_cross_midnight and block is not None:
-                intervals_for_cheapest = self._today_tomorrow_by_dt
+                # Cross-midnight mode enabled for multi-hour blocks
+                # First, calculate cheapest block using all of today's data
+                intervals_for_cheapest_today = self._today_day.interval_by_dt.copy()
+                
+                try:
+                    today_window = find_cheapest_window(
+                        intervals_for_cheapest_today,
+                        hours=block,
+                        interval=config.interval,
+                    )
+                    
+                    # Check if today's cheapest block has already passed
+                    block_has_passed = today_window.end <= self.now
+                    
+                    if block_has_passed and self._tomorrow_day is not None:
+                        # Block has passed AND tomorrow data is available
+                        # Calculate with only potential cross-midnight data:
+                        # Include only the last N hours of today that could create a cross-midnight window
+                        
+                        # Find midnight today in local time
+                        today_date = self.now.date()
+                        midnight_today = datetime.combine(
+                            today_date + timedelta(days=1), 
+                            time(0, 0, 0), 
+                            tzinfo=config.zoneinfo
+                        ).astimezone(timezone.utc)
+                        
+                        # Calculate the earliest time that could start a cross-midnight block
+                        # For a block to cross midnight, it needs to start at most N-1 hours before midnight
+                        # Example: 3-hour block starting at 22:00 → 22:00, 23:00, 00:00 (crosses)
+                        #          3-hour block starting at 21:00 → 21:00, 22:00, 23:00 (doesn't cross)
+                        if config.interval == SpotRateIntervalType.Hour:
+                            # For hourly intervals: N-hour block has N intervals
+                            # Last interval is at start + (N-1) hours
+                            # To cross midnight: start + (N-1) >= midnight → start >= midnight - (N-1)
+                            earliest_cross_midnight_start = midnight_today - timedelta(hours=block - 1)
+                        else:
+                            # For quarter-hour intervals: N-hour block has N*4 intervals (each 15 min)
+                            # Last interval is at start + (N*4-1) * 15 minutes = start + (N hours - 15 min)
+                            # To cross midnight: start + (N hours - 15 min) >= midnight
+                            # → start >= midnight - N hours + 15 min
+                            earliest_cross_midnight_start = midnight_today - timedelta(hours=block) + timedelta(minutes=15)
+                        
+                        # Only include intervals from today that could cross midnight
+                        intervals_for_cheapest = {
+                            dt: interval 
+                            for dt, interval in self._today_day.interval_by_dt.items()
+                            if interval.dt_utc >= earliest_cross_midnight_start
+                        }
+                        intervals_for_cheapest.update(self._tomorrow_day.interval_by_dt)
+                        logger.debug(
+                            "Cheapest %s-hour block: has passed, using %d cross-midnight intervals from today (from %s) + %d from tomorrow",
+                            block,
+                            len([dt for dt, interval in self._today_day.interval_by_dt.items() if interval.dt_utc >= earliest_cross_midnight_start]),
+                            earliest_cross_midnight_start.astimezone(config.zoneinfo).strftime("%H:%M"),
+                            len(self._tomorrow_day.interval_by_dt)
+                        )
+                    else:
+                        # Block hasn't passed OR tomorrow data not available
+                        # Use all of today's data (with tomorrow if available)
+                        intervals_for_cheapest = intervals_for_cheapest_today.copy()
+                        if self._tomorrow_day is not None:
+                            intervals_for_cheapest.update(self._tomorrow_day.interval_by_dt)
+                            logger.debug(
+                                "Cheapest %s-hour block: still valid, using all %d intervals from today + %d from tomorrow",
+                                block,
+                                len(self._today_day.interval_by_dt),
+                                len(self._tomorrow_day.interval_by_dt)
+                            )
+                        else:
+                            logger.debug(
+                                "Cheapest %s-hour block: using all %d intervals from today",
+                                block,
+                                len(intervals_for_cheapest)
+                            )
+                except ValueError:
+                    # Could not calculate today's window, use all available data
+                    intervals_for_cheapest = self._today_day.interval_by_dt.copy()
+                    if self._tomorrow_day is not None:
+                        intervals_for_cheapest.update(self._tomorrow_day.interval_by_dt)
+                    logger.debug(
+                        "Cheapest %s-hour block: could not calculate today's window, using all available data",
+                        block
+                    )
             else:
-                intervals_for_cheapest = self._today_day.interval_by_dt
+                # Cross-midnight disabled OR single interval (block is None)
+                # Always use ALL of today's data for consistency
+                intervals_for_cheapest = self._today_day.interval_by_dt.copy()
+                logger.debug(
+                    "Cheapest %s block: no cross_midnight, using all %d intervals from today",
+                    "interval" if block is None else f"{block}-hour",
+                    len(intervals_for_cheapest)
+                )
+            
+            # Validate we have intervals
+            if not intervals_for_cheapest:
+                logger.warning(
+                    "No intervals available for cheapest %s block calculation",
+                    "interval" if block is None else f"{block}-hour"
+                )
+                continue
 
             try:
                 window = find_cheapest_window(
