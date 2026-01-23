@@ -109,6 +109,10 @@ class SpotRate:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.OTE_PUBLIC_URL, data=query) as response:
+                    if response.status > 299:
+                        raise OTEFault(
+                            f"Unable to download rates, server returned status {response.status}"
+                        )
                     return await response.text()
         except aiohttp.ClientError as e:
             raise OTEFault(f"Unable to download rates: {e}")
@@ -117,6 +121,7 @@ class SpotRate:
         try:
             return ET.fromstring(text)
         except Exception as e:
+            logger.error("Failed to parse OTE response: %s", text)
             if "Application is not available" in text:
                 raise UpdateFailed("OTE Portal is currently not available!") from e
             raise UpdateFailed("Failed to parse query response.") from e
@@ -268,11 +273,11 @@ class SpotRate:
         return result
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from .cnb_rate import CnbRate
 
     spot_rate = SpotRate()
-    tz = ZoneInfo('Europe/Prague')
+    tz = ZoneInfo("Europe/Prague")
     if len(sys.argv) >= 2:
         use_date = date.fromisoformat(sys.argv[1])
         dt = now(tz).replace(year=use_date.year, month=use_date.month, day=use_date.day)
