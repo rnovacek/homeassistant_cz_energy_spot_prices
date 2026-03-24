@@ -554,8 +554,6 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
             "SpotRateCoordinator[%s].on_schedule called at %s", self._commodity, dt
         )
 
-        breakpoint()
-
         if self._update_schedule:
             self._update_schedule()
             self._update_schedule = None
