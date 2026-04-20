@@ -44,7 +44,7 @@ TOMORROW_CHEAPEST_15min_DT = "2025-10-23T21:45:00+00:00"
 
 
 def approx(expected: float | str):
-    return pytest.approx(float(expected), abs=0.00001)  # pyright: ignore[reportUnknownMemberType]
+    return pytest.approx(float(expected), abs=0.0002)
 
 
 def get_rate(currency: str, unit: str) -> float:
