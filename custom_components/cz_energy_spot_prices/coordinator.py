@@ -142,12 +142,12 @@ class SpotRateDay:
 
     def first(self) -> SpotRateInterval | None:
         min_dt = None
-        min_price = None
-        for dt, price in self.interval_by_dt.items():
-            if min_dt is None or min_dt < dt:
+        min_interval = None
+        for dt, interval in self.interval_by_dt.items():
+            if min_dt is None or dt < min_dt:
                 min_dt = dt
-                min_price = price
-        return min_price
+                min_interval = interval
+        return min_interval
 
 
 @final
@@ -523,8 +523,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         else:
             # We don't have data for tomorrow, next update will be today
             if self.DATA_AVAILABLE_TIME < now_prague.time():
-                # Update time already happened today but we don't have tomorrow data, schedule update soon (in 5 minutes)
-                local_target = now_prague + timedelta(minutes=5)
+                # Update time already happened today but we don't have tomorrow data, schedule update soon
+                local_target = now_prague + timedelta(seconds=self.DATA_RESCHEDULE_DELAY)
             else:
                 # Update 13:02 today
                 local_target = datetime.combine(
@@ -623,9 +623,11 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         else:
             # When DST changes, it might be 11 or 13 hours, but that doesn't matter
             # for just checking if tomorrow data are available
-            noon_tomorrow = now(PRAGUE_TZ).replace(
-                hour=12, minute=0, second=0, microsecond=0
-            ) + timedelta(days=1)
+            noon_tomorrow = (
+                now(PRAGUE_TZ).replace(
+                    hour=12, minute=0, second=0, microsecond=0
+                ) + timedelta(days=1)
+            ).astimezone(timezone.utc)
 
             return (
                 self._spot_rate_data[SpotRateIntervalType.QuarterHour].get(
@@ -778,7 +780,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
             action=lambda dt: self.async_request_refresh(),
         )
 
-        raise UpdateFailed("Failed to update OTE prices")
+        raise UpdateFailed("Failed to update CNB FX rates")
 
     @override
     async def _async_update_data(self):
