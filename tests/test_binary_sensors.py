@@ -11,7 +11,14 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from custom_components.cz_energy_spot_prices.const import SpotRateIntervalType
 from custom_components.cz_energy_spot_prices.coordinator import PRAGUE_TZ, Window
 
-from . import BASE_DT, CHEAPEST_15min_WINDOW, approx, get_entry, get_rate, init_integration
+from . import (
+    BASE_DT,
+    CHEAPEST_15min_WINDOW,
+    approx,
+    get_entry,
+    get_rate,
+    init_integration,
+)
 
 
 @pytest.mark.asyncio
@@ -32,11 +39,11 @@ async def test_has_tomorrow_data_sensor(
             hass,
             [
                 get_entry(
-                    currency='CZK', unit='kWh', interval=SpotRateIntervalType.Hour
+                    currency="CZK", unit="kWh", interval=SpotRateIntervalType.Hour
                 ),
                 get_entry(
-                    currency='EUR',
-                    unit='MWh',
+                    currency="EUR",
+                    unit="MWh",
                     interval=SpotRateIntervalType.QuarterHour,
                 ),
             ],
@@ -45,12 +52,14 @@ async def test_has_tomorrow_data_sensor(
         sensor = hass.states.get("binary_sensor.spot_electricity_has_tomorrow_data")
         assert sensor
         if has_tomorrow:
-            assert sensor.state == 'on'
+            assert sensor.state == "on"
         else:
-            assert sensor.state == 'off'
+            assert sensor.state == "off"
 
         assert sensor.attributes["icon"] == "mdi:cash-clock"
-        assert sensor.attributes["friendly_name"] == "Spot Electricity has Tomorrow Data"
+        assert (
+            sensor.attributes["friendly_name"] == "Spot Electricity has Tomorrow Data"
+        )
 
 
 @pytest.mark.asyncio
@@ -65,7 +74,7 @@ async def test_is_cheapest_sensors(
     await hass.config.async_set_time_zone("Europe/Prague")
 
     cheapest_blocks_config = "1,2,3,4,5,6,7,8,9,10,11,12"
-    cheapest_blocks = [1,2,3,4,5,6,7,8,9,10,11,12]
+    cheapest_blocks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     with freeze_time(BASE_DT):
         async_fire_time_changed(hass, BASE_DT)
         assert await init_integration(
@@ -88,7 +97,7 @@ async def test_is_cheapest_sensors(
             ],
         )
 
-    rate_60min = get_rate('CZK', 'kWh')
+    rate_60min = get_rate("CZK", "kWh")
     rate_15min = get_rate("EUR", "MWh")
 
     dt = now
@@ -97,20 +106,22 @@ async def test_is_cheapest_sensors(
         with freeze_time(dt):
             async_fire_time_changed(hass, dt)
 
-            for trade in ('spot', 'buy', 'sell'):
-                if trade == 'spot':
-                    trade_name = 'Spot'
+            for trade in ("spot", "buy", "sell"):
+                if trade == "spot":
+                    trade_name = "Spot"
                     offset = 0
-                elif trade == 'buy':
-                    trade_name = 'Buy'
+                elif trade == "buy":
+                    trade_name = "Buy"
                     offset = 10
-                elif trade == 'sell':
-                    trade_name = 'Sell'
+                elif trade == "sell":
+                    trade_name = "Sell"
                     offset = -1
                 else:
-                    raise ValueError(f'Invalid trade: {trade}')
+                    raise ValueError(f"Invalid trade: {trade}")
 
-                sensor = hass.states.get(f"binary_sensor.{trade}_electricity_is_cheapest")
+                sensor = hass.states.get(
+                    f"binary_sensor.{trade}_electricity_is_cheapest"
+                )
                 check_cheapest_sensor(
                     sensor,
                     f"Current {trade_name} Electricity is Cheapest",
@@ -123,18 +134,21 @@ async def test_is_cheapest_sensors(
                 sensor = hass.states.get(
                     f"binary_sensor.{trade}_electricity_is_cheapest_15min"
                 )
-                check_cheapest_sensor(sensor, f"Current 15min {trade_name} Electricity is Cheapest", dt, CHEAPEST_15min_WINDOW, rate_15min, offset)
+                check_cheapest_sensor(
+                    sensor,
+                    f"Current 15min {trade_name} Electricity is Cheapest",
+                    dt,
+                    CHEAPEST_15min_WINDOW,
+                    rate_15min,
+                    offset,
+                )
 
                 for block in cheapest_blocks:
                     if block > 1:
                         # 1-hour block is the same as {trade}_electricity_is_cheapest - it's not duplicated
-                        entity_id = (
-                            f"binary_sensor.{trade}_electricity_is_cheapest_{block}_hours_block"
-                        )
+                        entity_id = f"binary_sensor.{trade}_electricity_is_cheapest_{block}_hours_block"
                         sensor = hass.states.get(entity_id)
-                        friendly_name = (
-                            f"Current {trade_name} Electricity is Cheapest {block} Hours Block"
-                        )
+                        friendly_name = f"Current {trade_name} Electricity is Cheapest {block} Hours Block"
                         check_cheapest_sensor(
                             sensor,
                             friendly_name,
@@ -158,7 +172,15 @@ async def test_is_cheapest_sensors(
 
         dt += timedelta(minutes=15)
 
-def check_cheapest_sensor(sensor: State | None, friendly_name: str, dt: datetime, window: Window, rate: float, offset: float):
+
+def check_cheapest_sensor(
+    sensor: State | None,
+    friendly_name: str,
+    dt: datetime,
+    window: Window,
+    rate: float,
+    offset: float,
+):
     assert sensor
     assert sensor.attributes["friendly_name"] == friendly_name
 
@@ -166,48 +188,48 @@ def check_cheapest_sensor(sensor: State | None, friendly_name: str, dt: datetime
     attr = sensor.attributes
     start = window.start.astimezone(PRAGUE_TZ)
     end = window.end.astimezone(PRAGUE_TZ)
-    assert attr['Start'] == start
-    assert attr['End'] == end
-    if '15min' in friendly_name:
+    assert attr["Start"] == start
+    assert attr["End"] == end
+    if "15min" in friendly_name:
         assert "Start hour" not in attr
         assert "End hour" not in attr
     else:
         assert attr["Start hour"] == start.hour
-        assert attr['End hour'] == end.hour
+        assert attr["End hour"] == end.hour
     prices = [(float(price) * rate + offset) for price in window.prices]
-    assert approx(cast(str, attr['Min'])) == min(prices)
-    assert approx(cast(str, attr['Max'])) == max(prices)
-    assert approx(cast(str, attr["Mean"])) == sum(prices) / len(prices)
+    assert approx(cast(str, attr["Min"])) == round(min(prices), 4)
+    assert approx(cast(str, attr["Max"])) == round(max(prices), 4)
+    assert approx(cast(str, attr["Mean"])) == round(sum(prices) / len(prices), 4)
     assert sensor.attributes["icon"] == "mdi:cash-clock"
 
 
 @pytest.fixture
 def windows_60min():
     hourly_prices = [
-        Decimal(92.42), # 0
-        Decimal(92.04), # 1
-        Decimal(91.57), # 2
-        Decimal(92.72), # 3
-        Decimal(92.57), # 4
-        Decimal(93.64), # 5
-        Decimal(112.83), # 6
-        Decimal(129.89), # 7
-        Decimal(130.37), # 8
-        Decimal(125.9), # 9
-        Decimal(105.42), # 10
-        Decimal(90.41), # 11
-        Decimal(86.16), # 12
-        Decimal(85.05), # 13
-        Decimal(92.98), # 14
-        Decimal(113.66), # 15
-        Decimal(147.49), # 16
-        Decimal(203.85), # 17
-        Decimal(293.73), # 18
-        Decimal(274.02), # 19
-        Decimal(185.28), # 20
-        Decimal(137.43), # 21
-        Decimal(125.98), # 22
-        Decimal(111.72), # 23
+        Decimal(92.42),  # 0
+        Decimal(92.04),  # 1
+        Decimal(91.57),  # 2
+        Decimal(92.72),  # 3
+        Decimal(92.57),  # 4
+        Decimal(93.64),  # 5
+        Decimal(112.83),  # 6
+        Decimal(129.89),  # 7
+        Decimal(130.37),  # 8
+        Decimal(125.9),  # 9
+        Decimal(105.42),  # 10
+        Decimal(90.41),  # 11
+        Decimal(86.16),  # 12
+        Decimal(85.05),  # 13
+        Decimal(92.98),  # 14
+        Decimal(113.66),  # 15
+        Decimal(147.49),  # 16
+        Decimal(203.85),  # 17
+        Decimal(293.73),  # 18
+        Decimal(274.02),  # 19
+        Decimal(185.28),  # 20
+        Decimal(137.43),  # 21
+        Decimal(125.98),  # 22
+        Decimal(111.72),  # 23
     ]
 
     # Get start of the cheapest window by its size
@@ -235,6 +257,7 @@ def windows_60min():
         )
 
     return window_by_size
+
 
 @pytest.fixture
 def windows_15min():

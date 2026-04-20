@@ -296,7 +296,7 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
             return
 
         try:
-            self._value = trade_rates.current_interval.price
+            self._value = round(trade_rates.current_interval.price, 4)
             logger.debug("Setting %s to %s", self.unique_id, self._value)
         except LookupError:
             logger.error(
@@ -318,12 +318,12 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
 
         for interval_data in trade_rates.today.interval_by_dt.values():
             dt_local = interval_data.dt_local.isoformat()
-            attributes[dt_local] = float(interval_data.price)
+            attributes[dt_local] = float(round(interval_data.price, 4))
 
         if trade_rates.tomorrow:
             for interval_data in trade_rates.tomorrow.interval_by_dt.values():
                 dt_local = interval_data.dt_local.isoformat()
-                attributes[dt_local] = float(interval_data.price)
+                attributes[dt_local] = float(round(interval_data.price, 4))
 
         self._attr = attributes
         self._attr_available = True
@@ -371,7 +371,7 @@ class HourFindSensor(ElectricityPriceSensor):
                 interval.dt_utc.isoformat(),
             )
 
-        self._value = interval.price
+        self._value = round(interval.price, 4)
         self._attr = {
             "at": interval.dt_local.isoformat(),
         }
@@ -491,7 +491,7 @@ class CurrentElectricityIntervalOrder(EnergyIntervalOrder):
         for interval in trade_rates.today.interval_by_dt.values():
             self._attr[interval.dt_local.isoformat()] = [
                 interval_order[interval.dt_utc],
-                float(round(interval.price, 3)),
+                float(round(interval.price, 4)),
             ]
 
         self._attr_available = True
@@ -518,7 +518,7 @@ class TomorrowElectricityIntervalOrder(EnergyIntervalOrder):
         for interval in trade_rates.tomorrow.interval_by_dt.values():
             self._attr[interval.dt_local.isoformat()] = [
                 interval_order[interval.dt_utc],
-                float(round(interval.price, 3)),
+                float(round(interval.price, 4)),
             ]
 
         self._attr_available = True
