@@ -30,13 +30,13 @@ from .const import (
 logger = logging.getLogger(__name__)
 
 UNITS = {
-    'kWh': 'kWh',
-    'MWh': 'MWh',
+    "kWh": "kWh",
+    "MWh": "MWh",
 }
 
 CURRENCIES = {
-    'CZK': 'CZK',
-    'EUR': 'EUR',
+    "CZK": "CZK",
+    "EUR": "EUR",
 }
 
 CONF_COMMODITY = "commodity"
@@ -114,6 +114,7 @@ async def async_get_localized_title(
 
     return template.format(currency=currency, unit=unit)
 
+
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -123,7 +124,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @override
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
         return OptionsFlowHandler()
 
@@ -183,7 +186,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class OptionsFlowHandler(config_entries.OptionsFlowWithReload):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ):# -> FlowResult:
+    ):  # -> FlowResult:
         """Manage the options."""
         logger.debug(
             f"OptionsFlowHandler:async_step_init user_input [{user_input}] data [{self.config_entry.data}] options [{self.config_entry.options}]"
@@ -272,19 +275,20 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithReload):
                             ),
                         },
                     ): cv.string,
-                    vol.Optional(
-                        CONF_ALLOW_CROSS_MIDNIGHT,
-                        default=user_input.get(CONF_ALLOW_CROSS_MIDNIGHT, False),
-                        description={
-                            "name": "Allow cheapest blocks to cross midnight",
-                            "description": (
-                                "If enabled, cheapest consecutive-hour periods can span across days "
-                                "(e.g., 23:00-01:00). "
-                                "Because daily prices reset at midnight, these blocks may change "
-                                "when new day data is loaded."
-                            ),
-                        },
-                    ): cv.boolean,
+                    # This is temporarily disabled, it will be redone in next version
+                    # vol.Optional(
+                    #     CONF_ALLOW_CROSS_MIDNIGHT,
+                    #     default=user_input.get(CONF_ALLOW_CROSS_MIDNIGHT, False),
+                    #     description={
+                    #         "name": "Allow cheapest blocks to cross midnight",
+                    #         "description": (
+                    #             "If enabled, cheapest consecutive-hour periods can span across days "
+                    #             "(e.g., 23:00-01:00). "
+                    #             "Because daily prices reset at midnight, these blocks may change "
+                    #             "when new day data is loaded."
+                    #         ),
+                    #     },
+                    # ): cv.boolean,
                 }
             )
         else:
