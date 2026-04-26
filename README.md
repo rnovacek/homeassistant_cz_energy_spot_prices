@@ -43,15 +43,15 @@ Variables:
 
 ```jinja
 {% set tax_kWh = 28.30 / 1000.0 %}
-{% set system_services_kWh = 212.82 / 1000.0 %}
-{% set oze_kWh = 495 / 1000.0 %}
-{% set low_distrib_kWh = 450.43 / 1000.0 %}
-{% set high_distrib_kWh = 644.30 / 1000.0 %}
-{% set operator_cost_kWh = 350.0 / 1000.0 %}
+{% set system_services_kWh = 164.24 / 1000.0 %}
+{% set oze_kWh = 0 / 1000.0 %}
+{% set low_distrib_kWh = 116.5 / 1000.0 %}
+{% set high_distrib_kWh = 754.77 / 1000.0 %}
+{% set operator_cost_kWh = 250.0 / 1000.0 %}
 {% set vat_percent = 21 %}
 
 {% set distrib_kWh = low_distrib_kWh %}
-{% if as_local(hour).hour in [9, 12, 16, 20] %}
+{% if as_local(hour).hour in [8, 12, 15, 19] %}
   {% set distrib_kWh = high_distrib_kWh %}
 {% endif %}
 
@@ -161,22 +161,36 @@ header:
   show: true
   show_states: true
   colorize_states: true
-graph_span: 2d
+  title: Nákupní cena (15 min)
+graph_span: 1d
 span:
   start: day
 now:
   show: true
-  label: Now
+  label: Nyní
+  color: "#ff0000"
 series:
-  - entity: sensor.current_spot_electricity_price
+  - entity: sensor.current_buy_electricity_price_15min
+    name: Cena
     float_precision: 2
-    type: column # or "line" if you prefer
+    type: line
+    curve: stepline
+    stroke_width: 2
     show:
       in_header: raw
+    color_threshold:
+      - value: -10
+        color: "#00cc00"
+      - value: 0
+        color: "#ffaa00"
+      - value: 4
+        color: "#ff0000"
     data_generator: |
-      return Object.entries(entity.attributes).map(([date, value], index) => {
-        return [new Date(date).getTime() + (30 * 60 * 1000), value];
-      });
+      return Object.entries(entity.attributes)
+        .filter(([key, _]) => !isNaN(Date.parse(key)))
+        .map(([date, value]) => {
+          return [new Date(date).getTime(), value];
+        });
 ```
 
 ## Find cheapest hours in selected interval
