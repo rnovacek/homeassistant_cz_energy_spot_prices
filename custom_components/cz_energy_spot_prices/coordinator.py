@@ -852,7 +852,7 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
             return None
         spot_rates = self._spot_coordinator.data
 
-        fx_rate = Decimal(1.0)
+        fx_rate = Decimal(1)
         if self._fx_coordinator:
             if not self._fx_coordinator.data:
                 logger.debug("Currency rates not available")
@@ -861,15 +861,20 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
             fx_rates = self._fx_coordinator.data
             eur_rate = fx_rates.get("EUR")
             if eur_rate is None:
-                logger.warning("Unable to find conversion rate for EUR")
-            else:
-                currency_rate = fx_rates.get(self._config.currency)
-                if currency_rate is None:
-                    logger.warning(
-                        f"Unable to find conversion rate for {self._config.currency}"
-                    )
-                else:
-                    fx_rate = eur_rate / currency_rate
+                logger.warning(
+                    "Unable to find conversion rate for EUR, skipping update to avoid publishing incorrect prices"
+                )
+                return None
+
+            currency_rate = fx_rates.get(self._config.currency)
+            if currency_rate is None:
+                logger.warning(
+                    "Unable to find conversion rate for %s, skipping update to avoid publishing incorrect prices",
+                    self._config.currency,
+                )
+                return None
+
+            fx_rate = eur_rate / currency_rate
 
         if self._config.unit == EnergyUnit.kWh:
             conversion_rate = fx_rate / Decimal(1000)
