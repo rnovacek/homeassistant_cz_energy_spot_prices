@@ -13,7 +13,7 @@ import aiohttp
 
 from .const import Commodity, SpotRateIntervalType
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 QUERY_ELECTRICITY = """<?xml version="1.0" encoding="UTF-8" ?>
@@ -121,7 +121,7 @@ class SpotRate:
         try:
             return ET.fromstring(text)
         except Exception as e:
-            logger.error("Failed to parse OTE response: %s", text)
+            _LOGGER.error("Failed to parse OTE response: %s", text)
             if "Application is not available" in text:
                 raise UpdateFailed("OTE Portal is currently not available!") from e
             raise UpdateFailed("Failed to parse query response.") from e
@@ -197,7 +197,7 @@ class SpotRate:
                     "{http://www.ote-cr.cz/schema/service/public}PeriodIndex"
                 )
                 if period_index_el is None or not period_index_el.text:
-                    logger.warning(
+                    _LOGGER.warning(
                         'Item has no "PeriodIndex" child or is empty: %s', current_date
                     )
                     current_hour = 0
@@ -227,7 +227,7 @@ class SpotRate:
 
             price_el = item.find("{http://www.ote-cr.cz/schema/service/public}Price")
             if price_el is None or price_el.text is None:
-                logger.info(
+                _LOGGER.info(
                     'Item has no "Price" child or is empty: %s %s',
                     current_date,
                     current_hour,
@@ -241,7 +241,7 @@ class SpotRate:
                     "{http://www.ote-cr.cz/schema/service/public}HourlyPrice"
                 )
                 if hourly_price_el is None or hourly_price_el.text is None:
-                    logger.info(
+                    _LOGGER.info(
                         'Item has no "HourlyPrice" child or is empty: %s %s',
                         current_date,
                         current_hour,

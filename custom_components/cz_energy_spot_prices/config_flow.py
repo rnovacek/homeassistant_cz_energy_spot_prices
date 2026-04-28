@@ -27,7 +27,7 @@ from .const import (
 )
 
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 UNITS = {
     "kWh": "kWh",
@@ -188,7 +188,7 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ):  # -> FlowResult:
         """Manage the options."""
-        logger.debug(
+        _LOGGER.debug(
             f"OptionsFlowHandler:async_step_init user_input [{user_input}] data [{self.config_entry.data}] options [{self.config_entry.options}]"
         )
 
