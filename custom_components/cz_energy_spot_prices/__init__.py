@@ -161,7 +161,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
 
         interval = SpotRateIntervalType.Day
     else:
-        raise ValueError("Invalid commodity: %s", commodity)
+        raise ValueError(f"Invalid commodity: {commodity}")
 
     if currency != Currency.EUR:
         fx_coordinator: FxCoordinator | None = domain_data.get(FX_COORDINATOR)
