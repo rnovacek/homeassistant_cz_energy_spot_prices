@@ -4,7 +4,11 @@ from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 import asyncio
-import xml.etree.ElementTree as ET
+
+# Use defusedxml to protect against XXE / billion-laughs attacks. Even though
+# the OTE endpoint is trusted and reached via HTTPS, parsing untrusted XML with
+# the stdlib parser is discouraged by the official Python docs.
+import defusedxml.ElementTree as ET
 
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util.dt import now
@@ -99,7 +103,7 @@ class SpotRate:
         end: date,
     ) -> str:
         return QUERY_ELECTRICITY.format(
-            start=start.isoformat(), end=end.isoformat(), in_eur="true"
+            start=start.isoformat(), end=end.isoformat()
         )
 
     def get_gas_query(self, start: date, end: date) -> str:
@@ -168,7 +172,7 @@ class SpotRate:
         text = await self._download(query)
         root = self._fromstring(text)
         fault = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}Fault")
-        if fault:
+        if fault is not None:
             faultstring = fault.find("faultstring")
             error = "Unknown error"
             if faultstring is not None:

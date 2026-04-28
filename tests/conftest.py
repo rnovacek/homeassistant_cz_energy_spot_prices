@@ -57,6 +57,21 @@ def mock_ote_electricity(request: pytest.FixtureRequest) -> Generator[MagicMock]
         mock_client.param = param
         yield mock_client
 
+
+@pytest.fixture
+def mock_ote_gas() -> Generator[MagicMock]:
+    """Patch ``SpotRate._download`` with a recorded gas response."""
+    with open(Path(__file__).parent / "fixtures" / "ote-gas-2025-10-22.xml") as f:
+        data = f.read()
+
+    with patch(
+        "custom_components.cz_energy_spot_prices.spot_rate.SpotRate._download",
+        autospec=True,
+    ) as mock_client:
+        mock_client.return_value = data
+        yield mock_client
+
+
 @pytest.fixture
 def mock_cnb() -> Generator[MagicMock]:
     with open(Path(__file__).parent / "fixtures" / "cnb-2025-10-22.json") as f:

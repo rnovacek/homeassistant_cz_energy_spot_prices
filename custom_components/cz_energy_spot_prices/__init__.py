@@ -77,6 +77,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                 commodity=commodity,
             )
             domain_data[SPOT_ELECTRICTY_COORDINATOR] = spot_coordinator
+            # Restore previously persisted data so sensors have something to
+            # show even before the first network fetch completes.
+            await spot_coordinator.async_load_persisted()
             # Fetch initial data (first refresh)
             await spot_coordinator.async_config_entry_first_refresh()
 
@@ -141,6 +144,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                 commodity=commodity,
             )
             domain_data[SPOT_GAS_COORDINATOR] = spot_coordinator
+            # Restore previously persisted data so sensors have something to
+            # show even before the first network fetch completes.
+            await spot_coordinator.async_load_persisted()
             # Fetch initial data (first refresh)
             await spot_coordinator.async_config_entry_first_refresh()
 
@@ -161,7 +167,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
 
         interval = SpotRateIntervalType.Day
     else:
-        raise ValueError("Invalid commodity: %s", commodity)
+        raise ValueError(f"Invalid commodity: {commodity}")
 
     if currency != Currency.EUR:
         fx_coordinator: FxCoordinator | None = domain_data.get(FX_COORDINATOR)
@@ -231,13 +237,13 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         entries_data.pop(config_entry.entry_id, None)
 
         if not entries_data:
-            for coordiantor in [
+            for coordinator in [
                 SPOT_ELECTRICTY_COORDINATOR,
                 SPOT_GAS_COORDINATOR,
                 FX_COORDINATOR,
             ]:
                 try:
-                    domain_data.pop(coordiantor)
+                    domain_data.pop(coordinator)
                 except LookupError:
                     pass
 
