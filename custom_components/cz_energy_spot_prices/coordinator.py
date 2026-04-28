@@ -774,7 +774,13 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
                 current_delay,
             )
 
-        self._update_schedule = event.async_call_later(
+        self._retry_attempt += 1
+
+        # Schedule retry without overwriting the midnight scheduler stored in
+        # ``self._update_schedule``. Otherwise the original midnight callback
+        # would leak (its cancel handle would be lost) and we'd also lose the
+        # daily refresh after the first failure.
+        event.async_call_later(
             self.hass,
             delay=current_delay,
             action=lambda dt: self.async_request_refresh(),
