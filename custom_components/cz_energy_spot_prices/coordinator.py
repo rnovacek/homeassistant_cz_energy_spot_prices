@@ -4,14 +4,15 @@ import asyncio
 from collections.abc import Sequence
 import logging
 from datetime import datetime, timedelta, timezone, time
+from decimal import Decimal, InvalidOperation
 from typing import cast, final, override
 from zoneinfo import ZoneInfo
-from decimal import Decimal
 
 import async_timeout
 
 from attr import dataclass
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -21,7 +22,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.util.dt import now
 
 from .cnb_rate import CnbRate
-from .const import Commodity, Currency, SpotRateIntervalType, EnergyUnit
+from .const import Commodity, Currency, DOMAIN, SpotRateIntervalType, EnergyUnit
 from .spot_rate import (
     RateByDatetime,
     RatesByInterval,
@@ -32,6 +33,8 @@ from .spot_rate import (
 logger = logging.getLogger(__name__)
 
 PRAGUE_TZ = ZoneInfo("Europe/Prague")
+
+STORAGE_VERSION = 1
 
 
 def get_now(zoneinfo: timezone | ZoneInfo = timezone.utc) -> datetime:
@@ -498,8 +501,67 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         self._commodity = commodity
         self._next_update: datetime | None = None
 
-        # TODO: persist data using
-        # self._store = storage.Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        # Persist last known good data so a restart of Home Assistant does not
+        # leave the integration without prices until OTE is queried again
+        # (especially around midnight).
+        self._store: Store[dict[str, dict[str, str]]] = Store(
+            hass,
+            STORAGE_VERSION,
+            f"{DOMAIN}.spot_rates.{commodity.value}",
+        )
+
+    @staticmethod
+    def _serialize(data: RatesByInterval) -> dict[str, dict[str, str]]:
+        """Serialize rates dict for persistence."""
+        return {
+            interval.value: {
+                dt.isoformat(): str(price) for dt, price in interval_data.items()
+            }
+            for interval, interval_data in data.items()
+        }
+
+    @staticmethod
+    def _deserialize(raw: dict[str, dict[str, str]]) -> RatesByInterval:
+        """Deserialize previously persisted rates."""
+        return {
+            SpotRateIntervalType(interval_key): {
+                datetime.fromisoformat(dt_iso): Decimal(price_str)
+                for dt_iso, price_str in dt_map.items()
+            }
+            for interval_key, dt_map in raw.items()
+        }
+
+    async def async_load_persisted(self) -> bool:
+        """Load previously persisted rates so sensors have data immediately
+        after a restart, even if OTE is unreachable.
+
+        Returns True if data was loaded successfully.
+        """
+        if self._spot_rate_data is not None:
+            return True
+
+        raw = await self._store.async_load()
+        if not raw:
+            return False
+
+        try:
+            loaded = self._deserialize(raw)
+        except (ValueError, KeyError, InvalidOperation) as exc:
+            logger.warning(
+                "Failed to deserialize persisted spot rates for %s: %s",
+                self._commodity,
+                exc,
+            )
+            return False
+
+        self._spot_rate_data = loaded
+        self.async_set_updated_data(loaded)
+        logger.debug(
+            "SpotRateCoordinator[%s] loaded persisted data with %d intervals",
+            self._commodity,
+            sum(len(v) for v in loaded.values()),
+        )
+        return True
 
     def _schedule_next_update(self):
         # OTE prices are published at 13:02 CE(S)T time - we need to make that independent on HA timezone,
@@ -686,10 +748,27 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
         logger.debug("SpotRateCoordinator[%s]._async_update_data", self._commodity)
 
-        self._spot_rate_data = await self._fetch_data_with_retry()
-        if self._spot_rate_data is None:
-            # Update failed, new update is already scheduled
+        new_data = await self._fetch_data_with_retry()
+        if new_data is None:
+            # Fetch failed; preserve previously loaded/persisted data so sensors
+            # do not become unavailable when OTE is temporarily down.
+            if self._spot_rate_data is not None:
+                logger.debug(
+                    "SpotRateCoordinator[%s] fetch failed, keeping previously loaded data",
+                    self._commodity,
+                )
+                return self._spot_rate_data
             return None
+
+        self._spot_rate_data = new_data
+
+        # Persist successful fetches so the data survives Home Assistant restarts.
+        try:
+            await self._store.async_save(self._serialize(new_data))
+        except Exception:  # pragma: no cover - defensive, storage is local
+            logger.exception(
+                "Failed to persist spot rate data for %s", self._commodity
+            )
 
         if not self.has_tomorrow_data() and self.is_tomorrow_data_available():
             # Tomorrow data should be available but are not => schedule update soon
