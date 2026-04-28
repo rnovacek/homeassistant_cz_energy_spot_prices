@@ -235,6 +235,10 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         # so the sensor is recreated there. Without this, removing the entry
         # that originally instantiated the sensor would leave it gone until
         # all entries are unloaded.
+        #
+        # Skip the reload when Home Assistant is shutting down — scheduling a
+        # reload during teardown races with the shutdown flow and can leave
+        # coroutines unawaited.
         unloaded_commodity = config_entry.data.get(CONF_COMMODITY, ELECTRICITY)
         for owner_flag, owner_commodity in (
             (GLOBAL_ELECTRICITY_SENSOR_FLAG, ELECTRICITY),
@@ -244,6 +248,8 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
                 continue
             domain_data.pop(owner_flag, None)
             if unloaded_commodity != owner_commodity:
+                continue
+            if not hass.is_running:
                 continue
             for other_entry in hass.config_entries.async_entries(DOMAIN):
                 if other_entry.entry_id == config_entry.entry_id:
