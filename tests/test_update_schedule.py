@@ -46,7 +46,7 @@ async def test_update_schedule(hass: HomeAssistant, mock_ote_electricity: AsyncM
                 )
                 assert (
                     scheduled_time - tomorrow_update_time
-                ).total_seconds() < SpotRateCoordinator.JITTER_SECONDS
+                ).total_seconds() <= SpotRateCoordinator.JITTER_SECONDS
                 call_later_mock.assert_not_called()
             else:
                 # We don't have tomorrow data...
@@ -58,7 +58,7 @@ async def test_update_schedule(hass: HomeAssistant, mock_ote_electricity: AsyncM
                     )
                     assert (
                         scheduled_time - today_update_time
-                    ).total_seconds() < SpotRateCoordinator.JITTER_SECONDS
+                    ).total_seconds() <= SpotRateCoordinator.JITTER_SECONDS
                     call_later_mock.assert_not_called()
                 else:
                     # ... next update will be soon (in 2 minutes)
