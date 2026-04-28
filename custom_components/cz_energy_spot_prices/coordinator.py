@@ -91,10 +91,6 @@ class SpotRateInterval:
 
         self.most_expensive_order = 0
 
-        # self.consecutive_sum_prices: dict[int, Decimal] = {}
-
-        # self.cheapest_consecutive_order: dict[int, int] = {}
-
     @override
     def __repr__(self):
         return f"<{self.dt_utc}: {self.price}>"
@@ -225,43 +221,6 @@ class IntervalSpotRateData:
                     logger.error("Unable to find cheapest interval")
                 else:
                     logger.error("Unable to find cheapest %s hour block", block)
-
-            # for base_dt, rate_interval in self.interval_by_dt.items():
-            #     rate = Decimal(0)
-            #     for offset in range(config.cheapest_blocks[-1]):
-            #         prev_dt = base_dt - timedelta(hours=offset)
-            #         prev_hour = self.interval_by_dt.get(prev_dt)
-            #         if not prev_hour:
-            #             # Out of range, probably before yesterday
-            #             continue
-
-            #         rate += prev_hour.price
-
-            #         if (offset + 1) in config.cheapest_blocks:
-            #             rate_interval.consecutive_sum_prices[(offset + 1)] = rate
-
-            # if not self.today_day:
-            #     return
-
-            # for consecutive in config.cheapest_blocks:
-            #     sorted_today_hours = sorted(
-            #         self.today_day.interval_by_dt.values(),
-            #         key=lambda hour: hour.consecutive_sum_prices.get(
-            #             consecutive, Decimal(0)
-            #         ),
-            #     )
-            #     for i, rate_interval in enumerate(sorted_today_hours, 1):
-            #         rate_interval.cheapest_consecutive_order[consecutive] = i
-
-            #     if self.tomorrow_day is not None:
-            #         sorted_tomorrow_hours = sorted(
-            #             self.tomorrow_day.interval_by_dt.values(),
-            #             key=lambda hour: hour.consecutive_sum_prices.get(
-            #                 consecutive, Decimal(0)
-            #             ),
-            #         )
-            #         for i, rate_interval in enumerate(sorted_tomorrow_hours, 1):
-            #             rate_interval.cheapest_consecutive_order[consecutive] = i
 
     def interval_for_dt(self, dt: datetime) -> SpotRateInterval:
         if self.config.interval == SpotRateIntervalType.Day:

@@ -307,10 +307,7 @@ if __name__ == "__main__":
         else:
             hour = ""
         print(f"{dt.isoformat():30s} {eur:10.4f} {czk:10.4f} {hour}")
-    # rates_eur = asyncio.run(spot_rate.get_gas_rates(dt, in_eur=True, unit='kWh'))
-    # rates_czk = asyncio.run(spot_rate.get_gas_rates(dt, in_eur=False, unit='kWh'))
 
     print("GAS")
     gas_rates = asyncio.run(spot_rate.get_gas_rates(dt))
     print(gas_rates)
-    # print_rates(rates_eur, rates_czk)
