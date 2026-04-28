@@ -27,7 +27,7 @@ from .coordinator import (
 )
 from .spot_rate_mixin import SpotRateSensorMixin, Trade
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -35,7 +35,7 @@ async def async_setup_entry(
     entry: SpotRateConfigEntry,
     async_add_entities: Callable[[list[Entity]], None],
 ) -> None:
-    logger.debug(
+    _LOGGER.debug(
         "binary_sensor.async_setup_entry %s, data: [%s] options: [%s]",
         entry.unique_id,
         entry.data,
@@ -184,9 +184,9 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
             window = trade_rates.cheapest_windows[self.hours]
         except KeyError:
             if self.hours is None:
-                logger.error("Unable to find cheapest interval")
+                _LOGGER.error("Unable to find cheapest interval")
             else:
-                logger.error("Unable to find cheapest %s hour block", self.hours)
+                _LOGGER.error("Unable to find cheapest %s hour block", self.hours)
             self._attr_available = False
             return
 

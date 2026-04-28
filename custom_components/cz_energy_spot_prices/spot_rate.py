@@ -4,7 +4,11 @@ from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 import asyncio
-import xml.etree.ElementTree as ET
+
+# Use defusedxml to protect against XXE / billion-laughs attacks. Even though
+# the OTE endpoint is trusted and reached via HTTPS, parsing untrusted XML with
+# the stdlib parser is discouraged by the official Python docs.
+import defusedxml.ElementTree as ET
 
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util.dt import now
@@ -13,7 +17,7 @@ import aiohttp
 
 from .const import Commodity, SpotRateIntervalType
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 QUERY_ELECTRICITY = """<?xml version="1.0" encoding="UTF-8" ?>
@@ -99,7 +103,7 @@ class SpotRate:
         end: date,
     ) -> str:
         return QUERY_ELECTRICITY.format(
-            start=start.isoformat(), end=end.isoformat(), in_eur="true"
+            start=start.isoformat(), end=end.isoformat()
         )
 
     def get_gas_query(self, start: date, end: date) -> str:
@@ -121,7 +125,7 @@ class SpotRate:
         try:
             return ET.fromstring(text)
         except Exception as e:
-            logger.error("Failed to parse OTE response: %s", text)
+            _LOGGER.error("Failed to parse OTE response: %s", text)
             if "Application is not available" in text:
                 raise UpdateFailed("OTE Portal is currently not available!") from e
             raise UpdateFailed("Failed to parse query response.") from e
@@ -168,7 +172,7 @@ class SpotRate:
         text = await self._download(query)
         root = self._fromstring(text)
         fault = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}Fault")
-        if fault:
+        if fault is not None:
             faultstring = fault.find("faultstring")
             error = "Unknown error"
             if faultstring is not None:
@@ -197,7 +201,7 @@ class SpotRate:
                     "{http://www.ote-cr.cz/schema/service/public}PeriodIndex"
                 )
                 if period_index_el is None or not period_index_el.text:
-                    logger.warning(
+                    _LOGGER.warning(
                         'Item has no "PeriodIndex" child or is empty: %s', current_date
                     )
                     current_hour = 0
@@ -227,7 +231,7 @@ class SpotRate:
 
             price_el = item.find("{http://www.ote-cr.cz/schema/service/public}Price")
             if price_el is None or price_el.text is None:
-                logger.info(
+                _LOGGER.info(
                     'Item has no "Price" child or is empty: %s %s',
                     current_date,
                     current_hour,
@@ -241,7 +245,7 @@ class SpotRate:
                     "{http://www.ote-cr.cz/schema/service/public}HourlyPrice"
                 )
                 if hourly_price_el is None or hourly_price_el.text is None:
-                    logger.info(
+                    _LOGGER.info(
                         'Item has no "HourlyPrice" child or is empty: %s %s',
                         current_date,
                         current_hour,
@@ -303,10 +307,7 @@ if __name__ == "__main__":
         else:
             hour = ""
         print(f"{dt.isoformat():30s} {eur:10.4f} {czk:10.4f} {hour}")
-    # rates_eur = asyncio.run(spot_rate.get_gas_rates(dt, in_eur=True, unit='kWh'))
-    # rates_czk = asyncio.run(spot_rate.get_gas_rates(dt, in_eur=False, unit='kWh'))
 
     print("GAS")
     gas_rates = asyncio.run(spot_rate.get_gas_rates(dt))
     print(gas_rates)
-    # print_rates(rates_eur, rates_czk)

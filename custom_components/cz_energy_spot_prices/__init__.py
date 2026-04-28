@@ -40,13 +40,13 @@ from .coordinator import (
 )
 
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 type SpotRateConfigEntry = ConfigEntry[EntryCoordinator]
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEntry):
-    logger.debug(
+    _LOGGER.debug(
         "async_setup_entry %s data: [%s]; options: [%s]",
         config_entry.unique_id,
         config_entry.data,
@@ -77,6 +77,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                 commodity=commodity,
             )
             domain_data[SPOT_ELECTRICTY_COORDINATOR] = spot_coordinator
+            # Restore previously persisted data so sensors have something to
+            # show even before the first network fetch completes.
+            await spot_coordinator.async_load_persisted()
             # Fetch initial data (first refresh)
             await spot_coordinator.async_config_entry_first_refresh()
 
@@ -89,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
             try:
                 buy_template = Template(buy_template_config, hass=hass)
             except TemplateError as e:
-                logger.error(
+                _LOGGER.error(
                     "Invalid template for electricity buy price: %s\n%s",
                     e,
                     buy_template_config,
@@ -102,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
             try:
                 sell_template = Template(sell_template_config, hass=hass)
             except TemplateError as e:
-                logger.error(
+                _LOGGER.error(
                     "Invalid template for electricity sell price: %s\n%s",
                     e,
                     sell_template_config,
@@ -123,7 +126,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                     [int(block) for block in cheapest_blocks_conf.split(",")]
                 )
             except ValueError:
-                logger.error(
+                _LOGGER.error(
                     "Invalid config for cheapest_blocks: %s", cheapest_blocks_conf
                 )
         else:
@@ -141,6 +144,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                 commodity=commodity,
             )
             domain_data[SPOT_GAS_COORDINATOR] = spot_coordinator
+            # Restore previously persisted data so sensors have something to
+            # show even before the first network fetch completes.
+            await spot_coordinator.async_load_persisted()
             # Fetch initial data (first refresh)
             await spot_coordinator.async_config_entry_first_refresh()
 
@@ -153,7 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
             try:
                 buy_template = Template(gas_buy_template_config, hass=hass)
             except TemplateError as e:
-                logger.error(
+                _LOGGER.error(
                     "Invalid template for gas buy price: %s\n%s",
                     e,
                     gas_buy_template_config,
@@ -161,7 +167,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
 
         interval = SpotRateIntervalType.Day
     else:
-        raise ValueError("Invalid commodity: %s", commodity)
+        raise ValueError(f"Invalid commodity: {commodity}")
 
     if currency != Currency.EUR:
         fx_coordinator: FxCoordinator | None = domain_data.get(FX_COORDINATOR)
@@ -219,7 +225,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Unload config entry."""
-    logger.debug("async_unload_entry %s", config_entry.unique_id)
+    _LOGGER.debug("async_unload_entry %s", config_entry.unique_id)
     unload_ok = await hass.config_entries.async_unload_platforms(
         config_entry, PLATFORMS
     )
@@ -231,13 +237,13 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         entries_data.pop(config_entry.entry_id, None)
 
         if not entries_data:
-            for coordiantor in [
+            for coordinator in [
                 SPOT_ELECTRICTY_COORDINATOR,
                 SPOT_GAS_COORDINATOR,
                 FX_COORDINATOR,
             ]:
                 try:
-                    domain_data.pop(coordiantor)
+                    domain_data.pop(coordinator)
                 except LookupError:
                     pass
 
@@ -295,7 +301,7 @@ async def _migrate_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
 
         if entity_id:
-            logger.info(
+            _LOGGER.info(
                 "Migrating %s unique_id %s → %s",
                 entity_id,
                 old_unique_id,
@@ -304,13 +310,13 @@ async def _migrate_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
             try:
                 _ = ent_reg.async_update_entity(entity_id, new_unique_id=new_unique_id)
             except ValueError as e:
-                logger.info(
+                _LOGGER.info(
                     "Unable to rename entity %s to %s: %s", entity_id, new_unique_id, e
                 )
             migrated += 1
 
     if migrated:
-        logger.info("Migrated %s entities from old unique_id format.", migrated)
+        _LOGGER.info("Migrated %s entities from old unique_id format.", migrated)
 
     deprecated_ids = [
         "sensor.spot_electricity_is_cheapest",
@@ -334,4 +340,4 @@ async def _migrate_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
         if entity_id:
             ent_reg.async_remove(entity_id)
-            logger.info("Deprecated entity %s removed", entity_id)
+            _LOGGER.info("Deprecated entity %s removed", entity_id)

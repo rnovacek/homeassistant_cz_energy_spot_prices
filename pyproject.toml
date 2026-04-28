@@ -14,6 +14,10 @@ dev = [
     "pytest==9.0.0",
     "pytest-asyncio==1.3.0",
     "pytest-homeassistant-custom-component>=0.13.300",
+    # Runtime dependency declared in custom_components/.../manifest.json.
+    # Listed here so that the test environment (which does not install manifest
+    # ``requirements``) can import the integration.
+    "defusedxml>=0.7.1",
 ]
 
 [tool.pyright]

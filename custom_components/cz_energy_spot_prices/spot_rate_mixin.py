@@ -14,7 +14,7 @@ from .coordinator import (
     IntervalTradeRateData,
 )
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 class Trade(StrEnum):

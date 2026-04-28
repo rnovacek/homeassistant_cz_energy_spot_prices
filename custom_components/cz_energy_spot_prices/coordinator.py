@@ -4,14 +4,15 @@ import asyncio
 from collections.abc import Sequence
 import logging
 from datetime import datetime, timedelta, timezone, time
+from decimal import Decimal, InvalidOperation
 from typing import cast, final, override
 from zoneinfo import ZoneInfo
-from decimal import Decimal
 
 import async_timeout
 
 from attr import dataclass
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -21,7 +22,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.util.dt import now
 
 from .cnb_rate import CnbRate
-from .const import Commodity, Currency, SpotRateIntervalType, EnergyUnit
+from .const import Commodity, Currency, DOMAIN, SpotRateIntervalType, EnergyUnit
 from .spot_rate import (
     RateByDatetime,
     RatesByInterval,
@@ -29,9 +30,11 @@ from .spot_rate import (
     OTEFault,
 )
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 PRAGUE_TZ = ZoneInfo("Europe/Prague")
+
+STORAGE_VERSION = 1
 
 
 def get_now(zoneinfo: timezone | ZoneInfo = timezone.utc) -> datetime:
@@ -60,11 +63,11 @@ class EntryConfig:
             try:
                 block = int(block)
             except ValueError:
-                logger.error("Invalid interval for cheapest blocks: %s", block)
+                _LOGGER.error("Invalid interval for cheapest blocks: %s", block)
                 continue
 
             if block < 1 or block > 23:
-                logger.error("Invalid interval for cheapest blocks: %s", block)
+                _LOGGER.error("Invalid interval for cheapest blocks: %s", block)
                 continue
 
             if block == 1 and self.interval == SpotRateIntervalType.Hour:
@@ -87,10 +90,6 @@ class SpotRateInterval:
         self.price = price
 
         self.most_expensive_order = 0
-
-        # self.consecutive_sum_prices: dict[int, Decimal] = {}
-
-        # self.cheapest_consecutive_order: dict[int, int] = {}
 
     @override
     def __repr__(self):
@@ -219,46 +218,9 @@ class IntervalSpotRateData:
                 self.cheapest_windows[block] = window
             except ValueError:
                 if block is None:
-                    logger.error("Unable to find cheapest interval")
+                    _LOGGER.error("Unable to find cheapest interval")
                 else:
-                    logger.error("Unable to find cheapest %s hour block", block)
-
-            # for base_dt, rate_interval in self.interval_by_dt.items():
-            #     rate = Decimal(0)
-            #     for offset in range(config.cheapest_blocks[-1]):
-            #         prev_dt = base_dt - timedelta(hours=offset)
-            #         prev_hour = self.interval_by_dt.get(prev_dt)
-            #         if not prev_hour:
-            #             # Out of range, probably before yesterday
-            #             continue
-
-            #         rate += prev_hour.price
-
-            #         if (offset + 1) in config.cheapest_blocks:
-            #             rate_interval.consecutive_sum_prices[(offset + 1)] = rate
-
-            # if not self.today_day:
-            #     return
-
-            # for consecutive in config.cheapest_blocks:
-            #     sorted_today_hours = sorted(
-            #         self.today_day.interval_by_dt.values(),
-            #         key=lambda hour: hour.consecutive_sum_prices.get(
-            #             consecutive, Decimal(0)
-            #         ),
-            #     )
-            #     for i, rate_interval in enumerate(sorted_today_hours, 1):
-            #         rate_interval.cheapest_consecutive_order[consecutive] = i
-
-            #     if self.tomorrow_day is not None:
-            #         sorted_tomorrow_hours = sorted(
-            #             self.tomorrow_day.interval_by_dt.values(),
-            #             key=lambda hour: hour.consecutive_sum_prices.get(
-            #                 consecutive, Decimal(0)
-            #             ),
-            #         )
-            #         for i, rate_interval in enumerate(sorted_tomorrow_hours, 1):
-            #             rate_interval.cheapest_consecutive_order[consecutive] = i
+                    _LOGGER.error("Unable to find cheapest %s hour block", block)
 
     def interval_for_dt(self, dt: datetime) -> SpotRateInterval:
         if self.config.interval == SpotRateIntervalType.Day:
@@ -488,10 +450,10 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         hass: HomeAssistant,
         commodity: Commodity,
     ):
-        logger.debug("SpotRateCoordinator[%s].__init__", commodity)
+        _LOGGER.debug("SpotRateCoordinator[%s].__init__", commodity)
         super().__init__(
             hass,
-            logger,
+            _LOGGER,
             name=f"Czech Energy Spot Prices [SpotRateCoordinator] for {commodity}",
         )
         self.hass = hass
@@ -502,8 +464,67 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         self._commodity = commodity
         self._next_update: datetime | None = None
 
-        # TODO: persist data using
-        # self._store = storage.Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        # Persist last known good data so a restart of Home Assistant does not
+        # leave the integration without prices until OTE is queried again
+        # (especially around midnight).
+        self._store: Store[dict[str, dict[str, str]]] = Store(
+            hass,
+            STORAGE_VERSION,
+            f"{DOMAIN}.spot_rates.{commodity.value}",
+        )
+
+    @staticmethod
+    def _serialize(data: RatesByInterval) -> dict[str, dict[str, str]]:
+        """Serialize rates dict for persistence."""
+        return {
+            interval.value: {
+                dt.isoformat(): str(price) for dt, price in interval_data.items()
+            }
+            for interval, interval_data in data.items()
+        }
+
+    @staticmethod
+    def _deserialize(raw: dict[str, dict[str, str]]) -> RatesByInterval:
+        """Deserialize previously persisted rates."""
+        return {
+            SpotRateIntervalType(interval_key): {
+                datetime.fromisoformat(dt_iso): Decimal(price_str)
+                for dt_iso, price_str in dt_map.items()
+            }
+            for interval_key, dt_map in raw.items()
+        }
+
+    async def async_load_persisted(self) -> bool:
+        """Load previously persisted rates so sensors have data immediately
+        after a restart, even if OTE is unreachable.
+
+        Returns True if data was loaded successfully.
+        """
+        if self._spot_rate_data is not None:
+            return True
+
+        raw = await self._store.async_load()
+        if not raw:
+            return False
+
+        try:
+            loaded = self._deserialize(raw)
+        except (ValueError, KeyError, InvalidOperation) as exc:
+            logger.warning(
+                "Failed to deserialize persisted spot rates for %s: %s",
+                self._commodity,
+                exc,
+            )
+            return False
+
+        self._spot_rate_data = loaded
+        self.async_set_updated_data(loaded)
+        logger.debug(
+            "SpotRateCoordinator[%s] loaded persisted data with %d intervals",
+            self._commodity,
+            sum(len(v) for v in loaded.values()),
+        )
+        return True
 
     def _schedule_next_update(self):
         # OTE prices are published at 13:02 CE(S)T time - we need to make that independent on HA timezone,
@@ -547,14 +568,14 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
     async def async_stop(self):
         """Cancel scheduled jobs."""
-        logger.debug("SpotRateCoordinator[%s].async_stop", self._commodity)
+        _LOGGER.debug("SpotRateCoordinator[%s].async_stop", self._commodity)
         if self._update_schedule:
             self._update_schedule()
             self._update_schedule = None
 
     @callback
     def on_schedule(self, dt: datetime):
-        logger.debug(
+        _LOGGER.debug(
             "SpotRateCoordinator[%s].on_schedule called at %s", self._commodity, dt
         )
 
@@ -565,7 +586,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         _ = self.hass.async_create_task(self.async_request_refresh())
 
     async def _fetch_data(self):
-        logger.debug("SpotRateCoordinator[%s]._fetch_data", self._commodity)
+        _LOGGER.debug("SpotRateCoordinator[%s]._fetch_data", self._commodity)
 
         zoneinfo = ZoneInfo(self.hass.config.time_zone)
         start = now(zoneinfo)
@@ -582,7 +603,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
     async def _fetch_data_with_retry(self):
         is_first_run = self.data is None
 
-        logger.debug("SpotRateCoordinator[%s]._fetch_data_with_retry", self._commodity)
+        _LOGGER.debug("SpotRateCoordinator[%s]._fetch_data_with_retry", self._commodity)
         current_delay = min(2**self._retry_attempt, self.MAX_RETRY_DELAY)
         try:
             async with async_timeout.timeout(30):
@@ -591,14 +612,14 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
                 return data
 
         except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
-            logger.warning(
+            _LOGGER.warning(
                 "Failed to update OTE prices, will retry in %d seconds: %s",
                 current_delay,
                 e,
             )
 
         except Exception:
-            logger.exception(
+            _LOGGER.exception(
                 "OTE request failed unexpectedly, will retry in %d seconds",
                 current_delay,
             )
@@ -654,7 +675,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
             self._update_schedule = None
 
         if point_in_time is not None:
-            logger.debug(
+            _LOGGER.debug(
                 "SpotRateCoordinator[%s] scheduling update at %s",
                 self._commodity,
                 point_in_time,
@@ -666,7 +687,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
             )
             self._next_update = point_in_time
         elif delay is not None:
-            logger.debug(
+            _LOGGER.debug(
                 "SpotRateCoordinator[%s] scheduling update in %s seconds",
                 self._commodity,
                 delay,
@@ -688,16 +709,33 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         so entities can quickly look up their data.
         """
 
-        logger.debug("SpotRateCoordinator[%s]._async_update_data", self._commodity)
+        _LOGGER.debug("SpotRateCoordinator[%s]._async_update_data", self._commodity)
 
-        self._spot_rate_data = await self._fetch_data_with_retry()
-        if self._spot_rate_data is None:
-            # Update failed, new update is already scheduled
+        new_data = await self._fetch_data_with_retry()
+        if new_data is None:
+            # Fetch failed; preserve previously loaded/persisted data so sensors
+            # do not become unavailable when OTE is temporarily down.
+            if self._spot_rate_data is not None:
+                logger.debug(
+                    "SpotRateCoordinator[%s] fetch failed, keeping previously loaded data",
+                    self._commodity,
+                )
+                return self._spot_rate_data
             return None
+
+        self._spot_rate_data = new_data
+
+        # Persist successful fetches so the data survives Home Assistant restarts.
+        try:
+            await self._store.async_save(self._serialize(new_data))
+        except Exception:  # pragma: no cover - defensive, storage is local
+            logger.exception(
+                "Failed to persist spot rate data for %s", self._commodity
+            )
 
         if not self.has_tomorrow_data() and self.is_tomorrow_data_available():
             # Tomorrow data should be available but are not => schedule update soon
-            logger.info(
+            _LOGGER.info(
                 "SpotRateCoordinator[%s] tomorrow data should be available in OTE but are not => rescheduling in 2 minutes",
                 self._commodity,
             )
@@ -706,7 +744,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         else:
             # Schedule the update for tommorow
             dt = self._schedule_next_update()
-            logger.info(
+            _LOGGER.info(
                 "SpotRateCoordinator[%s] data updated, scheduling next update at %s",
                 self._commodity,
                 dt,
@@ -726,7 +764,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
         """Initialize my coordinator."""
         super().__init__(
             hass,
-            logger,
+            _LOGGER,
             name="Czech Energy Spot Prices [FxCoordinator]",
         )
 
@@ -745,7 +783,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
     async def async_stop(self):
         """Cancel scheduled jobs."""
         if self._update_schedule:
-            logger.debug("Unscheduling FX coordinator")
+            _LOGGER.debug("Unscheduling FX coordinator")
             self._update_schedule()
             self._update_schedule = None
 
@@ -754,13 +792,13 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
         _ = self.hass.async_create_task(self.async_request_refresh())
 
     async def _fetch_data(self):
-        logger.debug("FxCoordinator._fetch_data")
+        _LOGGER.debug("FxCoordinator._fetch_data")
 
         rates = await self._cnb.get_current_rates()
         return rates
 
     async def _fetch_data_with_retry(self):
-        logger.debug("FxCoordinator._fetch_data_with_retry")
+        _LOGGER.debug("FxCoordinator._fetch_data_with_retry")
         current_delay = min(2**self._retry_attempt, self.MAX_RETRY_DELAY)
         try:
             async with async_timeout.timeout(30):
@@ -769,19 +807,25 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
                 return data
 
         except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
-            logger.warning(
+            _LOGGER.warning(
                 "Failed to update CNB FX rates, will retry in %d seconds: %s",
                 current_delay,
                 e,
             )
 
         except Exception:
-            logger.exception(
+            _LOGGER.exception(
                 "CNB FX request failed unexpectedly, will retry in %d seconds",
                 current_delay,
             )
 
-        self._update_schedule = event.async_call_later(
+        self._retry_attempt += 1
+
+        # Schedule retry without overwriting the midnight scheduler stored in
+        # ``self._update_schedule``. Otherwise the original midnight callback
+        # would leak (its cancel handle would be lost) and we'd also lose the
+        # daily refresh after the first failure.
+        event.async_call_later(
             self.hass,
             delay=current_delay,
             action=lambda dt: self.async_request_refresh(),
@@ -818,7 +862,7 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
 
         super().__init__(
             hass,
-            logger,
+            _LOGGER,
             name=f"Czech Energy Spot Prices [EntryCoordinator {config.unit, config.currency, config.commodity, config.interval}]",
         )
 
@@ -845,7 +889,7 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
     @callback
     def _source_updated(self):
         """When spot or FX data updates → recompute derived data."""
-        logger.debug(
+        _LOGGER.debug(
             "EntryCoordinator [%s] update by fx or spot rate change",
             self._config,
         )
@@ -855,27 +899,27 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
 
     def _compute_data(self):
         if not self._spot_coordinator.data:
-            logger.debug("Spot rate data not available")
+            _LOGGER.debug("Spot rate data not available")
             return None
         spot_rates = self._spot_coordinator.data
 
         fx_rate = Decimal(1)
         if self._fx_coordinator:
             if not self._fx_coordinator.data:
-                logger.debug("Currency rates not available")
+                _LOGGER.debug("Currency rates not available")
                 return None
 
             fx_rates = self._fx_coordinator.data
             eur_rate = fx_rates.get("EUR")
             if eur_rate is None:
-                logger.warning(
+                _LOGGER.warning(
                     "Unable to find conversion rate for EUR, skipping update to avoid publishing incorrect prices"
                 )
                 return None
 
             currency_rate = fx_rates.get(self._config.currency)
             if currency_rate is None:
-                logger.warning(
+                _LOGGER.warning(
                     "Unable to find conversion rate for %s, skipping update to avoid publishing incorrect prices",
                     self._config.currency,
                 )

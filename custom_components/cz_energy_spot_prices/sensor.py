@@ -29,7 +29,7 @@ from .spot_rate_mixin import (
     Trade,
 )
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 GLOBAL_SENSOR_FLAG = "global_sensor_created"
@@ -40,7 +40,7 @@ async def async_setup_entry(
     entry: SpotRateConfigEntry,
     async_add_entities: Callable[[Sequence[Entity]], None],
 ):
-    logger.debug(
+    _LOGGER.debug(
         "sensor.async_setup_entry %s, data: [%s] options: [%s]",
         entry.as_dict(),
         entry.data,
@@ -281,7 +281,7 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
         attributes: dict[str, float] = {}
 
         if rate_data is None:
-            logger.debug("No rate data for %s", self.entity_id)
+            _LOGGER.debug("No rate data for %s", self.entity_id)
             self._attr_available = False
             self._value = None
             self._attr = {}
@@ -289,7 +289,7 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
 
         trade_rates = self._get_trade_rates(rate_data)
         if not trade_rates:
-            logger.debug("No trade rate data for %s", self.entity_id)
+            _LOGGER.debug("No trade rate data for %s", self.entity_id)
             self._attr_available = False
             self._value = None
             self._attr = {}
@@ -297,9 +297,9 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
 
         try:
             self._value = round(trade_rates.current_interval.price, 4)
-            logger.debug("Setting %s to %s", self.unique_id, self._value)
+            _LOGGER.debug("Setting %s to %s", self.unique_id, self._value)
         except LookupError:
-            logger.error(
+            _LOGGER.error(
                 'Current time "%s" is not found in SpotRate values:\n%s',
                 get_now(),
                 "\n\t".join(
@@ -312,7 +312,7 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
             return
 
         if not trade_rates.today:
-            logger.error("No today spot rate data found for %s", self.entity_id)
+            _LOGGER.error("No today spot rate data found for %s", self.entity_id)
             self._attr_available = False
             return
 
@@ -327,7 +327,7 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
 
         self._attr = attributes
         self._attr_available = True
-        logger.debug("Setting %s _attr_available to %s", self.unique_id, self._value)
+        _LOGGER.debug("Setting %s _attr_available to %s", self.unique_id, self._value)
 
 
 class HourFindSensor(ElectricityPriceSensor):
@@ -344,19 +344,19 @@ class HourFindSensor(ElectricityPriceSensor):
             self._attr_available = False
             self._value = None
             self._attr = {}
-            logger.debug("No value found for %s", self.unique_id)
+            _LOGGER.debug("No value found for %s", self.unique_id)
             return
 
         self._attr_available = True
         if self._value is None:
-            logger.debug(
+            _LOGGER.debug(
                 "%s initialized with %.2f at %s",
                 self.unique_id,
                 interval.price,
                 interval.dt_utc.isoformat(),
             )
         elif round(interval.price or 0, 2) != round(self._value, 2):
-            logger.debug(
+            _LOGGER.debug(
                 "%s updated from %.2f to %.2f at %s",
                 self.unique_id,
                 self._value,
@@ -364,7 +364,7 @@ class HourFindSensor(ElectricityPriceSensor):
                 interval.dt_utc.isoformat(),
             )
         else:
-            logger.debug(
+            _LOGGER.debug(
                 "%s unchanged with %.2f at %s",
                 self.unique_id,
                 interval.price,
@@ -471,7 +471,7 @@ class CurrentElectricityIntervalOrder(EnergyIntervalOrder):
             return
 
         if not trade_rates.today:
-            logger.error("No today spot rate data found for %s", self.entity_id)
+            _LOGGER.error("No today spot rate data found for %s", self.entity_id)
 
             self._attr_available = False
             self._value = None
@@ -481,12 +481,12 @@ class CurrentElectricityIntervalOrder(EnergyIntervalOrder):
         now = trade_rates.current_interval.dt_utc
         cheapest_order = interval_order[now]
         if cheapest_order != self._value:
-            logger.debug(
+            _LOGGER.debug(
                 "%s updated from %s to %s", self.unique_id, self._value, cheapest_order
             )
             self._value = cheapest_order
         else:
-            logger.debug("%s unchanged with %d", self.unique_id, cheapest_order)
+            _LOGGER.debug("%s unchanged with %d", self.unique_id, cheapest_order)
 
         for interval in trade_rates.today.interval_by_dt.values():
             self._attr[interval.dt_local.isoformat()] = [
