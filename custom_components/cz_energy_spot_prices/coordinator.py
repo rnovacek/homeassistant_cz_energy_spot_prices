@@ -478,6 +478,10 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
     DATA_AVAILABLE_TIME = time(13, 10)
     JITTER_SECONDS = 120
     DATA_RESCHEDULE_DELAY = 120
+    # Cap the exponential retry delay to one hour. Without this the delay grows
+    # without bound (2**N seconds), reaching multiple days after ~20 attempts
+    # of a flaky upstream service.
+    MAX_RETRY_DELAY = 3600
 
     def __init__(
         self,
@@ -579,7 +583,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         is_first_run = self.data is None
 
         logger.debug("SpotRateCoordinator[%s]._fetch_data_with_retry", self._commodity)
-        current_delay = cast(int, 2**self._retry_attempt)
+        current_delay = min(2**self._retry_attempt, self.MAX_RETRY_DELAY)
         try:
             async with async_timeout.timeout(30):
                 data = await self._fetch_data()
@@ -712,6 +716,9 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
 
 class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
+    # Cap the exponential retry delay to one hour. See ``SpotRateCoordinator``.
+    MAX_RETRY_DELAY = 3600
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -754,7 +761,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
 
     async def _fetch_data_with_retry(self):
         logger.debug("FxCoordinator._fetch_data_with_retry")
-        current_delay = cast(int, 2**self._retry_attempt)
+        current_delay = min(2**self._retry_attempt, self.MAX_RETRY_DELAY)
         try:
             async with async_timeout.timeout(30):
                 data = await self._fetch_data()
