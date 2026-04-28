@@ -11,7 +11,7 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.template import Template
 from jinja2 import TemplateError
 
-from .config_flow import CONF_COMMODITY, CONF_INTERVAL, ELECTRICITY
+from .config_flow import CONF_COMMODITY, CONF_INTERVAL, ELECTRICITY, GAS
 
 from .const import (
     CONF_ALLOW_CROSS_MIDNIGHT,
@@ -229,6 +229,38 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         entries_data = cast(dict[str, Any], domain_data.get(ENTRY_COORDINATOR, {}))
 
         entries_data.pop(config_entry.entry_id, None)
+
+        # If this entry owned one of the per-commodity global binary sensors,
+        # forget the ownership and reload another entry of the same commodity
+        # so the sensor is recreated there. Without this, removing the entry
+        # that originally instantiated the sensor would leave it gone until
+        # all entries are unloaded.
+        unloaded_commodity = config_entry.data.get(CONF_COMMODITY, ELECTRICITY)
+        for owner_flag, owner_commodity in (
+            (GLOBAL_ELECTRICITY_SENSOR_FLAG, ELECTRICITY),
+            (GLOBAL_GAS_SENSOR_FLAG, GAS),
+        ):
+            if domain_data.get(owner_flag) != config_entry.entry_id:
+                continue
+            domain_data.pop(owner_flag, None)
+            if unloaded_commodity != owner_commodity:
+                continue
+            for other_entry in hass.config_entries.async_entries(DOMAIN):
+                if other_entry.entry_id == config_entry.entry_id:
+                    continue
+                if (
+                    other_entry.data.get(CONF_COMMODITY, ELECTRICITY)
+                    == owner_commodity
+                ):
+                    logger.debug(
+                        "Transferring %s ownership to entry %s",
+                        owner_flag,
+                        other_entry.entry_id,
+                    )
+                    _ = hass.async_create_task(
+                        hass.config_entries.async_reload(other_entry.entry_id)
+                    )
+                    break
 
         if not entries_data:
             for coordiantor in [

@@ -58,7 +58,9 @@ async def async_setup_entry(
                 device_id=entry.entry_id,
             )
             sensors.append(has_tomorrow_electricity_data)
-            hass.data[DOMAIN][GLOBAL_ELECTRICITY_SENSOR_FLAG] = True
+            # Remember which entry owns the sensor so it can be recreated on
+            # another entry of the same commodity if this owner is unloaded.
+            hass.data[DOMAIN][GLOBAL_ELECTRICITY_SENSOR_FLAG] = entry.entry_id
 
     elif commodity == GAS:
         if GLOBAL_GAS_SENSOR_FLAG not in domain_data:
@@ -68,7 +70,7 @@ async def async_setup_entry(
                 device_id=entry.entry_id,
             )
             sensors.append(has_tomorrow_gas_data)
-            hass.data[DOMAIN][GLOBAL_GAS_SENSOR_FLAG] = True
+            hass.data[DOMAIN][GLOBAL_GAS_SENSOR_FLAG] = entry.entry_id
 
     if commodity == ELECTRICITY:
         cheapest_blocks = coordinator.config.all_cheapest_blocks()
