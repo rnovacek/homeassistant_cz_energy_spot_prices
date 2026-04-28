@@ -168,7 +168,7 @@ class SpotRate:
         text = await self._download(query)
         root = self._fromstring(text)
         fault = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}Fault")
-        if fault:
+        if fault is not None:
             faultstring = fault.find("faultstring")
             error = "Unknown error"
             if faultstring is not None:
