@@ -84,7 +84,9 @@ class CnbRate:
             raise CnbRateError("Could not download CNB rates for last 7 days")
 
         for rate in cnb_rates["rates"]:
-            rates[rate["currencyCode"]] = Decimal(rate["rate"])
+            # Convert via str to preserve the precision of the source value
+            # (Decimal(float) would inherit float's binary rounding error).
+            rates[rate["currencyCode"]] = Decimal(str(rate["rate"]))
 
         return rates
 
