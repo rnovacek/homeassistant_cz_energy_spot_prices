@@ -237,13 +237,13 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         entries_data.pop(config_entry.entry_id, None)
 
         if not entries_data:
-            for coordiantor in [
+            for coordinator in [
                 SPOT_ELECTRICTY_COORDINATOR,
                 SPOT_GAS_COORDINATOR,
                 FX_COORDINATOR,
             ]:
                 try:
-                    domain_data.pop(coordiantor)
+                    domain_data.pop(coordinator)
                 except LookupError:
                     pass
 
