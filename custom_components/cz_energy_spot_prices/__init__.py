@@ -77,6 +77,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                 commodity=commodity,
             )
             domain_data[SPOT_ELECTRICTY_COORDINATOR] = spot_coordinator
+            # Restore previously persisted data so sensors have something to
+            # show even before the first network fetch completes.
+            await spot_coordinator.async_load_persisted()
             # Fetch initial data (first refresh)
             await spot_coordinator.async_config_entry_first_refresh()
 
@@ -141,6 +144,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                 commodity=commodity,
             )
             domain_data[SPOT_GAS_COORDINATOR] = spot_coordinator
+            # Restore previously persisted data so sensors have something to
+            # show even before the first network fetch completes.
+            await spot_coordinator.async_load_persisted()
             # Fetch initial data (first refresh)
             await spot_coordinator.async_config_entry_first_refresh()
 
