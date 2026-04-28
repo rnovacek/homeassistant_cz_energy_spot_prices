@@ -99,7 +99,7 @@ class SpotRate:
         end: date,
     ) -> str:
         return QUERY_ELECTRICITY.format(
-            start=start.isoformat(), end=end.isoformat(), in_eur="true"
+            start=start.isoformat(), end=end.isoformat()
         )
 
     def get_gas_query(self, start: date, end: date) -> str:
