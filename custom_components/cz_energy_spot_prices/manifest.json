@@ -12,5 +12,5 @@
     "custom_components.cz_energy_spot_prices"
   ],
   "requirements": ["defusedxml>=0.7.1"],
-  "version": "0.8.0"
+  "version": "0.8.1"
 }
