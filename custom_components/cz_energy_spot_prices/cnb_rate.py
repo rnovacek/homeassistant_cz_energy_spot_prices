@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from typing import TypedDict, cast
 from zoneinfo import ZoneInfo
@@ -42,16 +44,29 @@ class CnbRateError(Exception):
 class CnbRate:
     RATES_URL: str = "https://api.cnb.cz/cnbapi/exrates/daily"
 
-    def __init__(self) -> None:
+    def __init__(self, session: aiohttp.ClientSession | None = None) -> None:
         self._timezone: ZoneInfo = ZoneInfo("Europe/Prague")
         self._rates: dict[str, Decimal] = {}
         self._last_checked_date: date | None = None
+        self._session = session
+
+    @asynccontextmanager
+    async def _session_ctx(self) -> AsyncIterator[aiohttp.ClientSession]:
+        """Yield the injected session if available, otherwise create and close
+        a temporary one. Lets the rest of the code be agnostic about session
+        ownership.
+        """
+        if self._session is not None:
+            yield self._session
+            return
+        async with aiohttp.ClientSession() as session:
+            yield session
 
     async def download_rates(self, day: date) -> Rates:
         params = {"date": day.isoformat()}
 
         text: Rates
-        async with aiohttp.ClientSession() as session:
+        async with self._session_ctx() as session:
             async with session.get(self.RATES_URL, params=params) as response:
                 if response.status > 299:
                     if response.status == 400:

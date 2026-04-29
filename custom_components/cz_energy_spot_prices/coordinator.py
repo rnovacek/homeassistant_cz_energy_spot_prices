@@ -12,6 +12,7 @@ import async_timeout
 
 from attr import dataclass
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import (
@@ -457,7 +458,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
             name=f"Czech Energy Spot Prices [SpotRateCoordinator] for {commodity}",
         )
         self.hass = hass
-        self._spot_rate = SpotRate()
+        self._spot_rate = SpotRate(session=async_get_clientsession(hass))
         self._spot_rate_data: RatesByInterval | None = None
         self._update_schedule = None
         self._retry_attempt = 0
@@ -768,7 +769,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
             name="Czech Energy Spot Prices [FxCoordinator]",
         )
 
-        self._cnb = CnbRate()
+        self._cnb = CnbRate(session=async_get_clientsession(hass))
         self._retry_attempt = 0
 
         # Update on midnight local (hass) time
