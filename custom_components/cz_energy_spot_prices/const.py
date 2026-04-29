@@ -20,8 +20,11 @@ CONF_ADDITIONAL_COSTS_BUY_GAS = "additional_costs_buy_gas"
 CONF_CHEAPEST_BLOCKS = "cheapest_blocks"
 CONF_ALLOW_CROSS_MIDNIGHT = "allow_cross_midnight"
 
-GLOBAL_ELECTRICITY_SENSOR_FLAG = "global_electricity_binary_sensor_created"
-GLOBAL_GAS_SENSOR_FLAG = "global_gas_binary_sensor_created"
+# Tracks the entry_id of the entry that owns the per-commodity global
+# binary sensor (e.g. ``binary_sensor.spot_electricity_has_tomorrow_data``).
+# Used to recreate the sensor on a different entry when its owner is unloaded.
+GLOBAL_ELECTRICITY_SENSOR_OWNER = "global_electricity_binary_sensor_owner"
+GLOBAL_GAS_SENSOR_OWNER = "global_gas_binary_sensor_owner"
 
 
 class SpotRateIntervalType(StrEnum):
