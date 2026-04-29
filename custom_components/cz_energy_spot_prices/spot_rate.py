@@ -1,5 +1,7 @@
 import sys
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from decimal import Decimal
@@ -93,9 +95,10 @@ class SpotRate:
     OTE_PUBLIC_URL = "https://www.ote-cr.cz/services/PublicDataService"
     UNIT = "MWh"
 
-    def __init__(self):
+    def __init__(self, session: aiohttp.ClientSession | None = None):
         self.timezone = ZoneInfo("Europe/Prague")
         self.utc = ZoneInfo("UTC")
+        self._session = session
 
     def get_electricity_query(
         self,
@@ -109,9 +112,21 @@ class SpotRate:
     def get_gas_query(self, start: date, end: date) -> str:
         return QUERY_GAS.format(start=start.isoformat(), end=end.isoformat())
 
+    @asynccontextmanager
+    async def _session_ctx(self) -> AsyncIterator[aiohttp.ClientSession]:
+        """Yield the injected session if available, otherwise create and close
+        a temporary one. Lets the rest of the code be agnostic about session
+        ownership.
+        """
+        if self._session is not None:
+            yield self._session
+            return
+        async with aiohttp.ClientSession() as session:
+            yield session
+
     async def _download(self, query: str) -> str:
         try:
-            async with aiohttp.ClientSession() as session:
+            async with self._session_ctx() as session:
                 async with session.post(self.OTE_PUBLIC_URL, data=query) as response:
                     if response.status > 299:
                         raise OTEFault(
