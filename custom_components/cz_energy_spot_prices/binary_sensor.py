@@ -16,8 +16,8 @@ from . import SpotRateConfigEntry
 from .const import (
     ENTRY_COORDINATOR,
     DOMAIN,
-    GLOBAL_ELECTRICITY_SENSOR_FLAG,
-    GLOBAL_GAS_SENSOR_FLAG,
+    GLOBAL_ELECTRICITY_SENSOR_OWNER,
+    GLOBAL_GAS_SENSOR_OWNER,
     SpotRateIntervalType,
 )
 from .coordinator import (
@@ -51,7 +51,7 @@ async def async_setup_entry(
 
     # Add these sensors only once per integration as they are shared between services
     if commodity == ELECTRICITY:
-        if GLOBAL_ELECTRICITY_SENSOR_FLAG not in domain_data:
+        if GLOBAL_ELECTRICITY_SENSOR_OWNER not in domain_data:
             has_tomorrow_electricity_data = HasTomorrowElectricityData(
                 hass=hass,
                 coordinator=coordinator,
@@ -60,17 +60,17 @@ async def async_setup_entry(
             sensors.append(has_tomorrow_electricity_data)
             # Remember which entry owns the sensor so it can be recreated on
             # another entry of the same commodity if this owner is unloaded.
-            hass.data[DOMAIN][GLOBAL_ELECTRICITY_SENSOR_FLAG] = entry.entry_id
+            hass.data[DOMAIN][GLOBAL_ELECTRICITY_SENSOR_OWNER] = entry.entry_id
 
     elif commodity == GAS:
-        if GLOBAL_GAS_SENSOR_FLAG not in domain_data:
+        if GLOBAL_GAS_SENSOR_OWNER not in domain_data:
             has_tomorrow_gas_data = HasTomorrowGasData(
                 hass=hass,
                 coordinator=coordinator,
                 device_id=entry.entry_id,
             )
             sensors.append(has_tomorrow_gas_data)
-            hass.data[DOMAIN][GLOBAL_GAS_SENSOR_FLAG] = entry.entry_id
+            hass.data[DOMAIN][GLOBAL_GAS_SENSOR_OWNER] = entry.entry_id
 
     if commodity == ELECTRICITY:
         cheapest_blocks = coordinator.config.all_cheapest_blocks()

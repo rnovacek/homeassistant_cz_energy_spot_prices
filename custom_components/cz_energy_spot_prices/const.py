@@ -26,11 +26,6 @@ CONF_ALLOW_CROSS_MIDNIGHT = "allow_cross_midnight"
 GLOBAL_ELECTRICITY_SENSOR_OWNER = "global_electricity_binary_sensor_owner"
 GLOBAL_GAS_SENSOR_OWNER = "global_gas_binary_sensor_owner"
 
-# Backwards-compatible aliases used elsewhere in the codebase. They now hold
-# the owner entry_id instead of just a boolean.
-GLOBAL_ELECTRICITY_SENSOR_FLAG = GLOBAL_ELECTRICITY_SENSOR_OWNER
-GLOBAL_GAS_SENSOR_FLAG = GLOBAL_GAS_SENSOR_OWNER
-
 
 class SpotRateIntervalType(StrEnum):
     QuarterHour = "15min"

@@ -25,8 +25,8 @@ from .const import (
     CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY,
     CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY,
     CONF_ADDITIONAL_COSTS_BUY_GAS,
-    GLOBAL_ELECTRICITY_SENSOR_FLAG,
-    GLOBAL_GAS_SENSOR_FLAG,
+    GLOBAL_ELECTRICITY_SENSOR_OWNER,
+    GLOBAL_GAS_SENSOR_OWNER,
     Commodity,
     Currency,
     EnergyUnit,
@@ -242,7 +242,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         # the Home Assistant shutdown flow and can leave coroutines unawaited
         # in the test suite. The sensor will reappear next time the user
         # reloads (or HA restarts) any remaining entry of the same commodity.
-        for owner_flag in (GLOBAL_ELECTRICITY_SENSOR_FLAG, GLOBAL_GAS_SENSOR_FLAG):
+        for owner_flag in (GLOBAL_ELECTRICITY_SENSOR_OWNER, GLOBAL_GAS_SENSOR_OWNER):
             if domain_data.get(owner_flag) == config_entry.entry_id:
                 domain_data.pop(owner_flag, None)
 
@@ -260,11 +260,11 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         if ENTRY_COORDINATOR in domain_data:
             domain_data.pop(ENTRY_COORDINATOR, None)
 
-        if GLOBAL_ELECTRICITY_SENSOR_FLAG in domain_data:
-            domain_data.pop(GLOBAL_ELECTRICITY_SENSOR_FLAG, None)
+        if GLOBAL_ELECTRICITY_SENSOR_OWNER in domain_data:
+            domain_data.pop(GLOBAL_ELECTRICITY_SENSOR_OWNER, None)
 
-        if GLOBAL_GAS_SENSOR_FLAG in domain_data:
-            domain_data.pop(GLOBAL_GAS_SENSOR_FLAG, None)
+        if GLOBAL_GAS_SENSOR_OWNER in domain_data:
+            domain_data.pop(GLOBAL_GAS_SENSOR_OWNER, None)
 
     return unload_ok
 
