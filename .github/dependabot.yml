@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # GitHub Actions used by CI workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+
+  # Python dev/test dependencies tracked by uv.lock and pyproject.toml.
+  # The integration itself ships only `defusedxml` (see manifest.json);
+  # everything else here is dev-only (Home Assistant Core, pytest, ...).
+  # Group all dev updates into a single weekly PR to reduce noise and
+  # ignore security alerts for transitive dev-only packages.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      dev-dependencies:
+        patterns:
+          - "*"
