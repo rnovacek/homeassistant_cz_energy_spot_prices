@@ -2,17 +2,30 @@
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=rnovacek&repository=homeassistant_cz_energy_spot_prices&category=integration)
 
-Home Assistant integration that provides current Czech electricity spot prices based on [OTE](https://ote-cr.cz).
+Home Assistant integration that provides current Czech electricity and gas spot prices based on [OTE](https://ote-cr.cz).
 
 If this integration saves (or earns) you some money, you can [buy me a coffee ☕](https://github.com/sponsors/rnovacek).
 
 ## Features
 
-- Provides real-time Czech electricity spot and gas prices from [OTE](https://ote-cr.cz).
+- Provides real-time Czech electricity and gas spot prices from [OTE](https://ote-cr.cz).
+- Supports both **60-minute** and **15-minute** electricity spot intervals (15-minute prices are available since OTE introduced them).
 - Supports multiple currencies (EUR, CZK) and energy units (kWh, MWh).
 - Configurable templates for buy/sell prices, including VAT and distribution fees.
 - Includes sensors for monitoring current, cheapest, and most expensive electricity prices.
+- Configurable binary sensors for the cheapest **consecutive hour blocks** in a day (e.g. cheapest 2, 4 or 8 hours in a row).
+- Persists last downloaded prices across Home Assistant restarts so sensors are available immediately on startup.
 - Compatible with Home Assistant automations for energy optimization.
+
+### Multiple instances
+
+You can add the integration multiple times to combine commodities and intervals, for example:
+
+- one instance for 60-minute electricity spot prices,
+- another instance for 15-minute electricity spot prices,
+- another instance for gas spot prices.
+
+Each instance is configured separately (currency, unit, buy/sell template, cheapest blocks).
 
 ### Important note
 
@@ -33,9 +46,15 @@ See [Displaying a chart](#displaying-a-chart) for details.
 
 The integration shows just spot prices by default. If you want to also use actual prices for buying and selling (so including distribution fees, VAT, etc), you need to configure it. Use the "Configure" button in integration details and set templates for buying/selling.
 
-Variables:
-- `hour` variable to see what hour is currently being computed.
-- `value` is base spot price for given hour.
+Variables for **electricity** templates:
+- `value` — base spot price for the given interval (hourly or 15min, depending on configuration).
+- `hour` — datetime of the interval being computed. The value is in **UTC**; if you need the local time (e.g. for tariff windows), use `as_local(hour)`.
+
+Variables for **gas** templates (gas has only daily prices):
+- `value` — base spot price for the day.
+- `day` — date of the price (in UTC).
+
+If you do not enter a template, the corresponding buy/sell sensors are not created.
 
 ### Example templates
 
@@ -65,6 +84,17 @@ Variables:
 {{ value - operator_cost_kWh }}
 ```
 
+**Gas cost when buying**
+
+```jinja
+{% set distrib_kWh = 130.0 / 1000.0 %}
+{% set tax_kWh = 30.60 / 1000.0 %}
+{% set operator_cost_kWh = 250.0 / 1000.0 %}
+{% set vat_percent = 21 %}
+
+{{ (value + distrib_kWh + tax_kWh + operator_cost_kWh) * (100.0 + vat_percent) / 100.0 }}
+```
+
 ## Installation
 
 You can install the integration using HACS (preferred) or manually.
@@ -84,31 +114,45 @@ You can install the integration using HACS (preferred) or manually.
 ### Add and configure the integration
 
 1. Go to **Settings** -> **Devices & Services** -> **Add integration**.
-3. Search for "Czech Energy Spot Prices" and select it.
-4. Configure the currency and energy unit.
-4. (Optional) Use the "Configure" button to set templates for buy/sell prices (see above).
+2. Search for "Czech Energy Spot Prices" and select it.
+3. Pick the **commodity** (electricity or gas), **currency** and **energy unit**. For electricity you will also be asked to choose the **interval** (60 minutes or 15 minutes).
+4. (Optional) Use the "Configure" button to set templates for buy/sell prices (see above) and the list of cheapest consecutive hour blocks (see [Cheapest consecutive hour blocks](#cheapest-consecutive-hour-blocks)).
+5. (Optional) Repeat the steps to add another instance for a different commodity or interval (see [Multiple instances](#multiple-instances)).
 
 ## Sensors
 
-The integration provides several sensors to monitor electricity/gas prices and related data. Below is a list of available sensors and their attributes:
+The integration provides several sensors to monitor electricity/gas prices and related data. Below is a list of available sensors and their attributes.
 
+### Electricity sensors
+
+When the 15-minute interval is selected, the same sensors are also created with the `_15min` suffix in their entity id (e.g. `sensor.current_spot_electricity_price_15min`).
 
 | Sensor | value | attributes |
 | ------ | ----- | ---------- |
-| **Current Spot Electricity Price** | electricity price for current hour | dictionary with timestamps as keys and spot price for given hour as values |
+| **Current Spot Electricity Price** | electricity price for current interval (hour or 15 minutes) | dictionary with timestamps as keys and spot price for given interval as values |
 | **Spot Cheapest Electricity Today** | price of the cheapest electricity today | [At](#at)<br>[Hour](#hour) |
 | **Spot Most Expensive Electricity Today** | price of the most expensive electricity today | [At](#at)<br>[Hour](#hour) |
 | **Spot Cheapest Electricity Tomorrow** | price of the cheapest electricity tomorrow | [At](#at)<br>[Hour](#hour) |
 | **Spot Most Expensive Electricity Tomorrow** | price of the most expensive electricity tomorrow | [At](#at)<br>[Hour](#hour) |
-| **Current Spot Electricity Hour Order** | order of current hour when we sort hours by its price (1=cheapest, 24=most expensive) | dictionary with timestamps as keys and `order, price` as values |
-| **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `order, price` as values |
-| **Spot Electricity Has Tomorrow Data** | `On` when data for tomorrow are loaded, `Off` otherwise | |
-| **Spot Electricity Is Cheapest** | `On` when current hour has the cheapest price, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
-| **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current hour is in a block of cheapest consecutive hours, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
+| **Current Spot Electricity Hour Order** | order of current interval when we sort intervals by their price (1=cheapest, N=most expensive; N=24 for hourly, 96 for 15min) | dictionary with timestamps as keys and `[order, price]` as values |
+| **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `[order, price]` as values |
+| **Spot Electricity Has Tomorrow Data** | `On` when data for tomorrow are loaded, `Off` otherwise (created only once for all electricity instances) | |
+| **Spot Electricity Is Cheapest** | `On` when current interval has the cheapest price of the day, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
+| **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current time falls inside the cheapest consecutive `X` hour block of the day, `Off` otherwise (one sensor per `X` configured in [Cheapest consecutive hour blocks](#cheapest-consecutive-hour-blocks)) | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
 
-If you configure templates for buy and sell prices, there will also be similar sensors for buy/sell prices.
+If you configure templates for buy and sell prices, there will also be similar `Buy *` and `Sell *` sensors with the same structure.
 
-<!-- FIXME: add gas sensors when released -->
+### Gas sensors
+
+Gas prices are published once per day, so gas sensors are simpler than the electricity ones.
+
+| Sensor | value | attributes |
+| ------ | ----- | ---------- |
+| **Current Spot Gas Price** | gas spot price for today | |
+| **Tomorrow Spot Gas Price** | gas spot price for tomorrow (when available) | |
+| **Spot Gas Has Tomorrow Data** | `On` when tomorrow's gas price is loaded, `Off` otherwise (created only once for all gas instances) | |
+
+If you configure a buy template for gas, there will also be `Current Buy Gas Price` and `Tomorrow Buy Gas Price` sensors. Selling is not supported for gas.
 
 ## Common attributes
 
@@ -147,6 +191,25 @@ maximal price in the block, only available when the block is in the future
 ### Mean
 
 average (mean) price in the block, only available when the block is in the future
+
+
+## Cheapest consecutive hour blocks
+
+In addition to the always-present *Spot Electricity Is Cheapest* binary sensor (which marks the single cheapest interval of the day), you can ask the integration to create binary sensors for the cheapest **consecutive** hour blocks of the day.
+
+Open **Configure** on the integration card and fill the *Cheapest consecutive hour blocks* field with a comma-separated list of hour lengths, for example:
+
+```
+2, 4, 8
+```
+
+This creates three additional binary sensors:
+
+- `binary_sensor.spot_electricity_is_cheapest_2_hours_block`
+- `binary_sensor.spot_electricity_is_cheapest_4_hours_block`
+- `binary_sensor.spot_electricity_is_cheapest_8_hours_block`
+
+Each sensor turns `On` while the current time falls inside the cheapest contiguous window of the given length within today's prices. Equivalent `buy_*` and `sell_*` sensors are created when the corresponding templates are configured. Each block is computed within a single day (it does not span midnight).
 
 
 ## Displaying a chart
