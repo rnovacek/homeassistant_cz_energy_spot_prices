@@ -44,6 +44,7 @@
                     "additional_costs_sell_electricity": "Cena elektřiny při prodeji",
                     "additional_costs_buy_gas": "Cena plynu při nákupu",
                     "cheapest_blocks": "Nejlevnější bloky po sobě jdoucích hodin",
+                    "most_expensive_blocks": "Nejdražší bloky po sobě jdoucích hodin",
                     "allow_cross_midnight": "Povolit přechod nejlevnějších bloků přes půlnoc"
                 },
                 "data_description": {
@@ -51,6 +52,7 @@
                     "additional_costs_sell_electricity": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny, například pro odečtení fixního poplatku operátora ve výši 0.25 použijte `'{{ value - 0.25 }}`.  Použijte `hour` pro výpočet ceny v dané hodině, pokud se sazba v jednotlivých hodinách liší, například pro vysoký a nízký tarif. Hodnota `hour` je v UTC. Pokud potřebujete lokální čas použijte `as_local(hour)`. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen.",
                     "additional_costs_buy_gas": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny. Můžete použít `day` v UTC pro spotové ceny. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen.",
                     "cheapest_blocks": "Seznam délek bloků v hodinách oddělený čárkami. Pro každou délku se vytvoří binární senzor, který bude zapnutý během nejlevnějších po sobě jdoucích hodin dne.",
+                    "most_expensive_blocks": "Seznam délek bloků v hodinách oddělený čárkami. Pro každou délku se vytvoří binární senzor, který bude zapnutý během nejdražších po sobě jdoucích hodin dne. Nechání prázdné znamená, že se senzory nevytvoří.",
                     "allow_cross_midnight": "Pokud je povoleno, bloky mohou přeskočit půlnoc (např. 23:00–01:00). Protože se ceny zveřejňují po dnech, tyto bloky se mohou po načtení nových dat změnit."
                 }
             }
@@ -76,6 +78,12 @@
             "spot_electricity_is_cheapest_hours_block_15min": {
                 "name": "Aktuální blok {hours} hodin 15minutových spotových cen elektřiny je nejlevnější"
             },
+            "spot_electricity_is_most_expensive_hours_block": {
+                "name": "Aktuální blok {hours} hodin spotových cen elektřiny je nejdražší"
+            },
+            "spot_electricity_is_most_expensive_hours_block_15min": {
+                "name": "Aktuální blok {hours} hodin 15minutových spotových cen elektřiny je nejdražší"
+            },
             "spot_gas_has_tomorrow_data": {
                 "name": "K dispozici zítřejší spotové ceny plynu"
             },
@@ -91,6 +99,12 @@
             "buy_electricity_is_cheapest_hours_block_15min": {
                 "name": "Aktuální blok {hours} hodin 15minutových nákupních cen elektřiny je nejlevnější"
             },
+            "buy_electricity_is_most_expensive_hours_block": {
+                "name": "Aktuální blok {hours} hodin nákupních cen elektřiny je nejdražší"
+            },
+            "buy_electricity_is_most_expensive_hours_block_15min": {
+                "name": "Aktuální blok {hours} hodin 15minutových nákupních cen elektřiny je nejdražší"
+            },
             "sell_electricity_is_cheapest": {
                 "name": "Aktuální prodejní cena elektřiny je nejlevnější"
             },
@@ -102,6 +116,12 @@
             },
             "sell_electricity_is_cheapest_hours_block_15min": {
                 "name": "Aktuální blok {hours} hodin 15minutových prodejních cen elektřiny je nejlevnější"
+            },
+            "sell_electricity_is_most_expensive_hours_block": {
+                "name": "Aktuální blok {hours} hodin prodejních cen elektřiny je nejdražší"
+            },
+            "sell_electricity_is_most_expensive_hours_block_15min": {
+                "name": "Aktuální blok {hours} hodin 15minutových prodejních cen elektřiny je nejdražší"
             }
         },
         "sensor": {

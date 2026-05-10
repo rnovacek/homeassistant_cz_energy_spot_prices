@@ -18,6 +18,7 @@ from homeassistant.exceptions import TemplateError
 from .const import (
     CONF_ALLOW_CROSS_MIDNIGHT,
     CONF_CHEAPEST_BLOCKS,
+    CONF_MOST_EXPENSIVE_BLOCKS,
     DOMAIN,
     CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY,
     CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY,
@@ -233,6 +234,19 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithReload):
                 except ValueError:
                     errors[CONF_CHEAPEST_BLOCKS] = "invalid_format"
 
+            conf_most_expensive_blocks = user_input.get(CONF_MOST_EXPENSIVE_BLOCKS)
+            most_expensive_blocks = cast(str, conf_most_expensive_blocks or "")
+            most_expensive_parts: list[int] = []
+            for part in most_expensive_blocks.split(","):
+                # Empty string is allowed and means "no most expensive sensors"
+                stripped = part.strip()
+                if not stripped:
+                    continue
+                try:
+                    most_expensive_parts.append(int(stripped))
+                except ValueError:
+                    errors[CONF_MOST_EXPENSIVE_BLOCKS] = "invalid_format"
+
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
         else:
@@ -272,6 +286,18 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithReload):
                                 "Comma-separated list of hour blocks. "
                                 "For each number, a binary sensor will indicate when the "
                                 "current time falls inside the cheapest consecutive hours for that block."
+                            ),
+                        },
+                    ): cv.string,
+                    vol.Optional(
+                        CONF_MOST_EXPENSIVE_BLOCKS,
+                        default=user_input.get(CONF_MOST_EXPENSIVE_BLOCKS, ""),
+                        description={
+                            "name": "Most expensive consecutive hour blocks",
+                            "description": (
+                                "Comma-separated list of hour blocks. "
+                                "For each number, a binary sensor will indicate when the "
+                                "current time falls inside the most expensive consecutive hours for that block."
                             ),
                         },
                     ): cv.string,
