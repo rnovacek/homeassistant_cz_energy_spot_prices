@@ -511,7 +511,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         try:
             loaded = self._deserialize(raw)
         except (ValueError, KeyError, InvalidOperation) as exc:
-            logger.warning(
+            _LOGGER.warning(
                 "Failed to deserialize persisted spot rates for %s: %s",
                 self._commodity,
                 exc,
@@ -520,7 +520,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
         self._spot_rate_data = loaded
         self.async_set_updated_data(loaded)
-        logger.debug(
+        _LOGGER.debug(
             "SpotRateCoordinator[%s] loaded persisted data with %d intervals",
             self._commodity,
             sum(len(v) for v in loaded.values()),
@@ -717,7 +717,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
             # Fetch failed; preserve previously loaded/persisted data so sensors
             # do not become unavailable when OTE is temporarily down.
             if self._spot_rate_data is not None:
-                logger.debug(
+                _LOGGER.debug(
                     "SpotRateCoordinator[%s] fetch failed, keeping previously loaded data",
                     self._commodity,
                 )
@@ -730,7 +730,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         try:
             await self._store.async_save(self._serialize(new_data))
         except Exception:  # pragma: no cover - defensive, storage is local
-            logger.exception(
+            _LOGGER.exception(
                 "Failed to persist spot rate data for %s", self._commodity
             )
 
