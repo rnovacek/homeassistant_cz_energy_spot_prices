@@ -110,6 +110,43 @@ async def async_setup_entry(
                     )
                 )
 
+        most_expensive_blocks = coordinator.config.all_most_expensive_blocks()
+
+        for i in most_expensive_blocks:
+            sensors.append(
+                ConsecutiveMostExpensiveElectricitySensor(
+                    hours=i,
+                    hass=hass,
+                    coordinator=coordinator,
+                    device_id=entry.entry_id,
+                    trade=Trade.SPOT,
+                )
+            )
+
+        if coordinator.buy_template:
+            for i in most_expensive_blocks:
+                sensors.append(
+                    ConsecutiveMostExpensiveElectricitySensor(
+                        hours=i,
+                        hass=hass,
+                        coordinator=coordinator,
+                        device_id=entry.entry_id,
+                        trade=Trade.BUY,
+                    )
+                )
+
+        if coordinator.sell_template:
+            for i in most_expensive_blocks:
+                sensors.append(
+                    ConsecutiveMostExpensiveElectricitySensor(
+                        hours=i,
+                        hass=hass,
+                        coordinator=coordinator,
+                        device_id=entry.entry_id,
+                        trade=Trade.SELL,
+                    )
+                )
+
     async_add_entities(sensors)
 
 
@@ -189,6 +226,90 @@ class ConsecutiveCheapestElectricitySensor(BinarySpotRateSensorBase):
                 _LOGGER.error("Unable to find cheapest interval")
             else:
                 _LOGGER.error("Unable to find cheapest %s hour block", self.hours)
+            self._attr_available = False
+            return
+
+        self._attr_is_on = window.start <= now < window.end
+        start = window.start.astimezone(self.coordinator.config.zoneinfo)
+        end = window.end.astimezone(self.coordinator.config.zoneinfo)
+        self._attr = {
+            "Start": start,
+            "End": end,
+            "Min": float(round(min(window.prices), 4)),
+            "Max": float(round(max(window.prices), 4)),
+            "Mean": float(round(sum(window.prices) / len(window.prices), 4)),
+        }
+        if self.coordinator.config.interval == SpotRateIntervalType.Hour:
+            # Doesn't make sense to have these on 15min intervals
+            self._attr["Start hour"] = start.hour
+            self._attr["End hour"] = end.hour
+        self._attr_available = True
+
+
+class ConsecutiveMostExpensiveElectricitySensor(BinarySpotRateSensorBase):
+    _attr_icon: str | None = "mdi:cash-clock"
+
+    def __init__(
+        self,
+        hours: int,
+        hass: HomeAssistant,
+        coordinator: EntryCoordinator,
+        device_id: str,
+        trade: Trade,
+    ) -> None:
+        self.hours = hours
+
+        interval = (
+            "_15min"
+            if coordinator.config.interval == SpotRateIntervalType.QuarterHour
+            else ""
+        )
+
+        self._attr_unique_id = (
+            f"{device_id}_{trade.lower()}_electricity_is_most_expensive_"
+            f"{self.hours}_hours_block{interval}"
+        )
+        self._attr_translation_key = (
+            f"{trade.lower()}_electricity_is_most_expensive_hours_block{interval}"
+        )
+        self._attr_translation_placeholders = {
+            "hours": str(self.hours),
+        }
+        self.entity_id = (
+            f"binary_sensor.{trade.lower()}_electricity_is_most_expensive_"
+            f"{self.hours}_hours_block{interval}"
+        )
+
+        super().__init__(
+            hass=hass,
+            coordinator=coordinator,
+            device_id=device_id,
+            trade=trade,
+        )
+
+    @override
+    def update(self, rate_data: IntervalTradeRateData | None):
+        self._attr = {}
+
+        now = get_now()
+
+        if not rate_data:
+            self._attr_available = False
+            self._attr_is_on = None
+            return
+
+        trade_rates = self._get_trade_rates(rate_data)
+        if not trade_rates:
+            self._attr_available = False
+            self._attr_is_on = None
+            return
+
+        try:
+            window = trade_rates.most_expensive_windows[self.hours]
+        except KeyError:
+            _LOGGER.error(
+                "Unable to find most expensive %s hour block", self.hours
+            )
             self._attr_available = False
             return
 

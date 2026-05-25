@@ -55,6 +55,7 @@ class EntryConfig:
     sell_template: Template | None
     cheapest_blocks: Sequence[int] | None
     cheapest_blocks_cross_midnight: bool
+    most_expensive_blocks: Sequence[int] | None
 
     def all_cheapest_blocks(self) -> list[int | None]:
         """Return all cheapest blocks, including blocks that take just one interval (it's value is None)."""
@@ -81,6 +82,37 @@ class EntryConfig:
 
             cheapest_blocks.append(block)
         return cheapest_blocks
+
+    def all_most_expensive_blocks(self) -> list[int]:
+        """Return all most expensive blocks configured by the user.
+
+        Unlike :meth:`all_cheapest_blocks` this does not auto-include the
+        single-interval case, because the most-expensive sensors are an
+        opt-in feature that should not create unexpected entities for
+        existing users.
+        """
+        most_expensive_blocks: list[int] = []
+        for block in self.most_expensive_blocks or []:
+            try:
+                block = int(block)
+            except ValueError:
+                _LOGGER.error(
+                    "Invalid interval for most expensive blocks: %s", block
+                )
+                continue
+
+            if block < 1 or block > 23:
+                _LOGGER.error(
+                    "Invalid interval for most expensive blocks: %s", block
+                )
+                continue
+
+            if block in most_expensive_blocks:
+                # Prevent duplication
+                continue
+
+            most_expensive_blocks.append(block)
+        return most_expensive_blocks
 
 
 @final
@@ -170,6 +202,7 @@ class IntervalSpotRateData:
         self._today_tomorrow_by_dt: dict[datetime, SpotRateInterval] = {}
 
         self.cheapest_windows: dict[int | None, Window] = {}
+        self.most_expensive_windows: dict[int, Window] = {}
 
         # Create individual SpotRateInterval instances and compute statistics while doing that
         for utc_hour, rate in rates.items():
@@ -222,6 +255,22 @@ class IntervalSpotRateData:
                     _LOGGER.error("Unable to find cheapest interval")
                 else:
                     _LOGGER.error("Unable to find cheapest %s hour block", block)
+
+        for block in config.all_most_expensive_blocks():
+            if config.cheapest_blocks_cross_midnight:
+                intervals_for_most_expensive = self._today_tomorrow_by_dt
+            else:
+                intervals_for_most_expensive = self._today_day.interval_by_dt
+
+            try:
+                window = find_most_expensive_window(
+                    intervals_for_most_expensive,
+                    hours=block,
+                    interval=config.interval,
+                )
+                self.most_expensive_windows[block] = window
+            except ValueError:
+                _LOGGER.error("Unable to find most expensive %s hour block", block)
 
     def interval_for_dt(self, dt: datetime) -> SpotRateInterval:
         if self.config.interval == SpotRateIntervalType.Day:
@@ -393,6 +442,33 @@ def find_cheapest_window(
     hours: int | None,
     interval: SpotRateIntervalType,
 ) -> Window:
+    return _find_extremum_window(
+        interval_by_dt,
+        hours=hours,
+        interval=interval,
+        most_expensive=False,
+    )
+
+
+def find_most_expensive_window(
+    interval_by_dt: dict[datetime, SpotRateInterval],
+    hours: int | None,
+    interval: SpotRateIntervalType,
+) -> Window:
+    return _find_extremum_window(
+        interval_by_dt,
+        hours=hours,
+        interval=interval,
+        most_expensive=True,
+    )
+
+
+def _find_extremum_window(
+    interval_by_dt: dict[datetime, SpotRateInterval],
+    hours: int | None,
+    interval: SpotRateIntervalType,
+    most_expensive: bool,
+) -> Window:
     # window size is how many interval will fit into given X hours block
     window_size = 1
     if hours is not None:
@@ -403,10 +479,10 @@ def find_cheapest_window(
 
     all_prices = [i.price for i in interval_by_dt.values()]
 
-    min_sum = None
-    min_sum_start = None
-    min_sum_end = None
-    min_sum_prices = None
+    best_sum = None
+    best_sum_start = None
+    best_sum_end = None
+    best_sum_prices = None
 
     for i, (dt, _) in enumerate(interval_by_dt.items()):
         window = all_prices[i : (i + window_size)]
@@ -414,22 +490,26 @@ def find_cheapest_window(
             continue
 
         window_sum = sum(window)
-        if min_sum is None or window_sum < min_sum:
-            min_sum = window_sum
-            min_sum_start = dt
+        is_better = (
+            best_sum is None
+            or (window_sum > best_sum if most_expensive else window_sum < best_sum)
+        )
+        if is_better:
+            best_sum = window_sum
+            best_sum_start = dt
             if interval == SpotRateIntervalType.Hour:
-                min_sum_end = dt + timedelta(hours=window_size)
+                best_sum_end = dt + timedelta(hours=window_size)
             else:
-                min_sum_end = dt + timedelta(minutes=window_size * 15)
-            min_sum_prices = window
+                best_sum_end = dt + timedelta(minutes=window_size * 15)
+            best_sum_prices = window
 
-    if min_sum_start is None or min_sum_end is None or min_sum_prices is None:
+    if best_sum_start is None or best_sum_end is None or best_sum_prices is None:
         raise ValueError()
 
     return Window(
-        start=min_sum_start,
-        end=min_sum_end,
-        prices=min_sum_prices,
+        start=best_sum_start,
+        end=best_sum_end,
+        prices=best_sum_prices,
     )
 
 

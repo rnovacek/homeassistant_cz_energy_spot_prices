@@ -6,7 +6,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import pytest
 from custom_components.cz_energy_spot_prices.const import SpotRateIntervalType
-from custom_components.cz_energy_spot_prices.coordinator import PRAGUE_TZ, SpotRateInterval, find_cheapest_window
+from custom_components.cz_energy_spot_prices.coordinator import (
+    PRAGUE_TZ,
+    SpotRateInterval,
+    find_cheapest_window,
+    find_most_expensive_window,
+)
 
 
 BASE_DT = datetime(2025, 1, 1, 0, tzinfo=PRAGUE_TZ)
@@ -166,6 +171,130 @@ def test_find_cheapest_window_15min(
     offset: int,
 ):
     window = find_cheapest_window(
+        interval_by_dt=interval_15mins,
+        hours=hours,
+        interval=SpotRateIntervalType.QuarterHour,
+    )
+    assert window.prices == prices
+    assert window.start == BASE_DT + timedelta(minutes=offset * 15)
+    assert window.end == BASE_DT + timedelta(minutes=(offset + len(prices)) * 15)
+
+
+def test_find_most_expensive_window_no_data():
+    with pytest.raises(ValueError):
+        _ = find_most_expensive_window(
+            {}, hours=None, interval=SpotRateIntervalType.Hour
+        )
+
+    with pytest.raises(ValueError):
+        _ = find_most_expensive_window({}, hours=2, interval=SpotRateIntervalType.Hour)
+
+    with pytest.raises(ValueError):
+        _ = find_most_expensive_window(
+            {}, hours=None, interval=SpotRateIntervalType.QuarterHour
+        )
+
+    with pytest.raises(ValueError):
+        _ = find_most_expensive_window(
+            {}, hours=2, interval=SpotRateIntervalType.QuarterHour
+        )
+
+
+def test_find_most_expensive_window_not_enough_data(
+    interval_one_value: dict[datetime, SpotRateInterval],
+):
+    with pytest.raises(ValueError):
+        _ = find_most_expensive_window(
+            interval_by_dt=interval_one_value,
+            hours=2,
+            interval=SpotRateIntervalType.Hour,
+        )
+
+    with pytest.raises(ValueError):
+        _ = find_most_expensive_window(
+            interval_by_dt=interval_one_value,
+            hours=1,
+            interval=SpotRateIntervalType.QuarterHour,
+        )
+
+
+@pytest.mark.parametrize(
+    "hours,interval",
+    [
+        (None, SpotRateIntervalType.Hour),
+        (1, SpotRateIntervalType.Hour),
+        (None, SpotRateIntervalType.QuarterHour),
+    ],
+)
+def test_find_most_expensive_window_one_interval(
+    interval_one_value: dict[datetime, SpotRateInterval],
+    hours: int | None,
+    interval: SpotRateIntervalType,
+):
+    first_interval = list(interval_one_value.values())[0]
+
+    window = find_most_expensive_window(
+        interval_by_dt=interval_one_value, hours=hours, interval=interval
+    )
+    assert window.prices == [Decimal(10)]
+    assert window.start == first_interval.dt_utc
+    if interval == SpotRateIntervalType.Hour:
+        assert window.end == first_interval.dt_utc + timedelta(hours=1)
+    else:
+        assert window.end == first_interval.dt_utc + timedelta(minutes=15)
+
+
+@pytest.mark.parametrize(
+    "hours,prices,offset",
+    (
+        # 19 at index 17 is the most expensive single hour
+        (None, [19], 17),
+        (1, [19], 17),
+        # 19 + 17 at indices 17-18
+        (2, [19, 17], 17),
+        # 19 + 17 + 18 at indices 17-19
+        (3, [19, 17, 18], 17),
+        # First-wins on ties: indices 16-19 sum 68 == indices 17-20 sum 68
+        (4, [14, 19, 17, 18], 16),
+        # Indices 17-21 sum 83
+        (5, [19, 17, 18, 14, 15], 17),
+        # Indices 17-22 sum 100
+        (6, [19, 17, 18, 14, 15, 17], 17),
+    ),
+)
+def test_find_most_expensive_window_60min(
+    interval_60mins: dict[datetime, SpotRateInterval],
+    hours: int | None,
+    prices: list[Decimal],
+    offset: int,
+):
+    window = find_most_expensive_window(
+        interval_by_dt=interval_60mins,
+        hours=hours,
+        interval=SpotRateIntervalType.Hour,
+    )
+    assert window.prices == prices
+    assert window.start == BASE_DT + timedelta(hours=offset)
+    assert window.end == BASE_DT + timedelta(hours=offset + len(prices))
+
+
+@pytest.mark.parametrize(
+    "hours,prices,offset",
+    (
+        (None, [19], 17),
+        # hours=1 -> 4 consecutive 15-min slots; first-wins on tie at indices 16-19
+        (1, [14, 19, 17, 18], 16),
+        # hours=2 -> 8 consecutive 15-min slots; max sum 127 at indices 15-22
+        (2, [13, 14, 19, 17, 18, 14, 15, 17], 15),
+    ),
+)
+def test_find_most_expensive_window_15min(
+    interval_15mins: dict[datetime, SpotRateInterval],
+    hours: int | None,
+    prices: list[Decimal],
+    offset: int,
+):
+    window = find_most_expensive_window(
         interval_by_dt=interval_15mins,
         hours=hours,
         interval=SpotRateIntervalType.QuarterHour,
