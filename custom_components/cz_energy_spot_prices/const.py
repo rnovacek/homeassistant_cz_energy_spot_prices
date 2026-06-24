@@ -18,6 +18,7 @@ CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY = "additional_costs_buy_electricity"
 CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY = "additional_costs_sell_electricity"
 CONF_ADDITIONAL_COSTS_BUY_GAS = "additional_costs_buy_gas"
 CONF_CHEAPEST_BLOCKS = "cheapest_blocks"
+CONF_MOST_EXPENSIVE_BLOCKS = "most_expensive_blocks"
 CONF_ALLOW_CROSS_MIDNIGHT = "allow_cross_midnight"
 
 # Tracks the entry_id of the entry that owns the per-commodity global

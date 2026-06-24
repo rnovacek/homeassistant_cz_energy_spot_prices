@@ -17,6 +17,7 @@ from custom_components.cz_energy_spot_prices.const import (
     CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY,
     CONF_ALLOW_CROSS_MIDNIGHT,
     CONF_CHEAPEST_BLOCKS,
+    CONF_MOST_EXPENSIVE_BLOCKS,
     DOMAIN,
     SpotRateIntervalType,
 )
@@ -58,6 +59,7 @@ def get_entry(
     unit: str = "MWh",
     interval: SpotRateIntervalType = SpotRateIntervalType.Hour,
     cheapest_blocks: str | None = "",
+    most_expensive_blocks: str | None = "",
     allow_cross_midnight: bool = False,
 ):
     return MockConfigEntry(
@@ -78,6 +80,7 @@ def get_entry(
             CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY: "{{ value + 10 }}",
             CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY: "{{ value - 1 }}",
             CONF_CHEAPEST_BLOCKS: cheapest_blocks,
+            CONF_MOST_EXPENSIVE_BLOCKS: most_expensive_blocks,
             CONF_ALLOW_CROSS_MIDNIGHT: allow_cross_midnight,
         },
         minor_version=1,

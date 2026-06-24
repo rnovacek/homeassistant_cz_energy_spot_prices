@@ -16,6 +16,7 @@ from .config_flow import CONF_COMMODITY, CONF_INTERVAL, ELECTRICITY
 from .const import (
     CONF_ALLOW_CROSS_MIDNIGHT,
     CONF_CHEAPEST_BLOCKS,
+    CONF_MOST_EXPENSIVE_BLOCKS,
     ENTRY_COORDINATOR,
     SPOT_ELECTRICTY_COORDINATOR,
     SPOT_GAS_COORDINATOR,
@@ -64,6 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
     buy_template = None
     sell_template = None
     cheapest_blocks = None
+    most_expensive_blocks = None
     cheapest_blocks_cross_midnight = False
 
     # Reuse the same coordinator for all entries
@@ -132,6 +134,22 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
         else:
             cheapest_blocks = []
 
+        most_expensive_blocks_conf: str | None = config_entry.options.get(
+            CONF_MOST_EXPENSIVE_BLOCKS
+        )
+        if most_expensive_blocks_conf is not None:
+            try:
+                most_expensive_blocks = sorted(
+                    [int(block) for block in most_expensive_blocks_conf.split(",")]
+                )
+            except ValueError:
+                _LOGGER.error(
+                    "Invalid config for most_expensive_blocks: %s",
+                    most_expensive_blocks_conf,
+                )
+        else:
+            most_expensive_blocks = []
+
         cheapest_blocks_cross_midnight = (
             config_entry.options.get(CONF_ALLOW_CROSS_MIDNIGHT) or False
         )
@@ -197,6 +215,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
         buy_template=buy_template,
         sell_template=sell_template,
         cheapest_blocks=cheapest_blocks,
+        most_expensive_blocks=most_expensive_blocks,
         cheapest_blocks_cross_midnight=cheapest_blocks_cross_midnight,
         timezone=hass.config.time_zone,
         zoneinfo=ZoneInfo(hass.config.time_zone),

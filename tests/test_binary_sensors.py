@@ -260,6 +260,62 @@ def windows_60min():
 
 
 @pytest.fixture
+def most_expensive_windows_60min():
+    hourly_prices = [
+        Decimal(92.42),  # 0
+        Decimal(92.04),  # 1
+        Decimal(91.57),  # 2
+        Decimal(92.72),  # 3
+        Decimal(92.57),  # 4
+        Decimal(93.64),  # 5
+        Decimal(112.83),  # 6
+        Decimal(129.89),  # 7
+        Decimal(130.37),  # 8
+        Decimal(125.9),   # 9
+        Decimal(105.42),  # 10
+        Decimal(90.41),   # 11
+        Decimal(86.16),   # 12
+        Decimal(85.05),   # 13
+        Decimal(92.98),   # 14
+        Decimal(113.66),  # 15
+        Decimal(147.49),  # 16
+        Decimal(203.85),  # 17
+        Decimal(293.73),  # 18
+        Decimal(274.02),  # 19
+        Decimal(185.28),  # 20
+        Decimal(137.43),  # 21
+        Decimal(125.98),  # 22
+        Decimal(111.72),  # 23
+    ]
+
+    # Verified by brute-force sum of windows from hourly_prices above
+    most_expensive_start_by_size = {
+        1: 18,   # 293.73
+        2: 18,   # 293.73+274.02=567.75
+        3: 17,   # 203.85+293.73+274.02=771.60
+        4: 17,   # 203.85+293.73+274.02+185.28=956.88
+        5: 16,   # 147.49+203.85+293.73+274.02+185.28=1104.37
+        6: 16,   # 147.49+203.85+293.73+274.02+185.28+137.43=1241.80
+        7: 16,   # 147.49+203.85+293.73+274.02+185.28+137.43+125.98=1367.78
+        8: 15,   # 113.66+..+125.98=1481.44
+        9: 15,   # 113.66+..+111.72=1593.16
+        10: 14,  # 92.98+..+111.72=1686.14
+        11: 13,  # 85.05+..+111.72=1771.19
+        12: 12,  # 86.16+..+111.72=1857.35
+    }
+
+    window_by_size: dict[int, Window] = {}
+    for size, start in most_expensive_start_by_size.items():
+        window_by_size[size] = Window(
+            start=BASE_DT + timedelta(hours=start),
+            end=BASE_DT + timedelta(hours=start + size),
+            prices=hourly_prices[start : start + size],
+        )
+
+    return window_by_size
+
+
+@pytest.fixture
 def windows_15min():
     interval_prices = [
         Decimal(99.54),
@@ -482,3 +538,103 @@ def windows_15min():
         )
 
     return window_by_size
+
+
+@pytest.mark.asyncio
+async def test_is_most_expensive_sensors(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+    most_expensive_windows_60min: dict[int, Window],
+):
+    now = BASE_DT
+    await hass.config.async_set_time_zone("Europe/Prague")
+
+    most_expensive_blocks_config = "1,2,3,4,5,6,7,8,9,10,11,12"
+    most_expensive_blocks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [
+                get_entry(
+                    currency="CZK",
+                    unit="kWh",
+                    interval=SpotRateIntervalType.Hour,
+                    most_expensive_blocks=most_expensive_blocks_config,
+                ),
+            ],
+        )
+
+    rate_60min = get_rate("CZK", "kWh")
+
+    dt = now
+    end = BASE_DT + timedelta(days=1)
+    while dt < end:
+        with freeze_time(dt):
+            async_fire_time_changed(hass, dt)
+
+            for trade in ("spot", "buy", "sell"):
+                if trade == "spot":
+                    trade_name = "Spot"
+                    offset = 0
+                elif trade == "buy":
+                    trade_name = "Buy"
+                    offset = 10
+                else:
+                    trade_name = "Sell"
+                    offset = -1
+
+                sensor = hass.states.get(
+                    f"binary_sensor.{trade}_electricity_is_most_expensive"
+                )
+                check_most_expensive_sensor(
+                    sensor,
+                    f"Current {trade_name} Electricity is Most Expensive",
+                    dt,
+                    most_expensive_windows_60min[1],
+                    rate_60min,
+                    offset,
+                )
+
+                for block in most_expensive_blocks:
+                    if block > 1:
+                        entity_id = f"binary_sensor.{trade}_electricity_is_most_expensive_{block}_hours_block"
+                        sensor = hass.states.get(entity_id)
+                        friendly_name = f"Current {trade_name} Electricity is Most Expensive {block} Hours Block"
+                        check_most_expensive_sensor(
+                            sensor,
+                            friendly_name,
+                            dt,
+                            most_expensive_windows_60min[block],
+                            rate_60min,
+                            offset,
+                        )
+
+        dt += timedelta(minutes=60)
+
+
+def check_most_expensive_sensor(
+    sensor: "State | None",
+    friendly_name: str,
+    dt: datetime,
+    window: Window,
+    rate: float,
+    offset: float,
+):
+    assert sensor
+    assert sensor.attributes["friendly_name"] == friendly_name
+
+    assert sensor.state == "on" if window.start <= dt < window.end else "off"
+    attr = sensor.attributes
+    start = window.start.astimezone(PRAGUE_TZ)
+    end = window.end.astimezone(PRAGUE_TZ)
+    assert attr["Start"] == start
+    assert attr["End"] == end
+    assert attr["Start hour"] == start.hour
+    assert attr["End hour"] == end.hour
+    prices = [(float(price) * rate + offset) for price in window.prices]
+    assert approx(cast(str, attr["Min"])) == round(min(prices), 4)
+    assert approx(cast(str, attr["Max"])) == round(max(prices), 4)
+    assert approx(cast(str, attr["Mean"])) == round(sum(prices) / len(prices), 4)
+    assert sensor.attributes["icon"] == "mdi:cash-remove"
