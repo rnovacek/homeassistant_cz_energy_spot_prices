@@ -5,6 +5,7 @@ from typing import TypedDict, cast
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 import aiohttp
+import json
 
 from homeassistant.util.dt import utcnow
 
@@ -22,7 +23,11 @@ class Rate(TypedDict):
     currency: str
     amount: int
     currencyCode: str
-    rate: float
+    rate: Decimal
+
+
+def decimal_loads(s:str) -> dict[any]:
+    return json.loads(s, parse_float=Decimal)
 
 
 class Rates(TypedDict):
@@ -77,7 +82,7 @@ class CnbRate:
                     raise CnbRateError(
                         f"Error {response.status} while downloading rates"
                     )
-                text = cast(Rates, await response.json())
+                text = cast(Rates, await response.json(loads=decimal_loads))
         return text
 
     async def get_day_rates(self, day: date) -> dict[str, Decimal]:
@@ -99,9 +104,7 @@ class CnbRate:
             raise CnbRateError("Could not download CNB rates for last 7 days")
 
         for rate in cnb_rates["rates"]:
-            # Convert via str to preserve the precision of the source value
-            # (Decimal(float) would inherit float's binary rounding error).
-            rates[rate["currencyCode"]] = Decimal(str(rate["rate"]))
+            rates[rate["currencyCode"]] = rate["rate"]
 
         return rates
 
