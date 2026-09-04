@@ -968,6 +968,11 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
 
         self._cnb = CnbRate(session=async_get_clientsession(hass))
         self._retry_attempt = 0
+        self._store: Store[dict[str, str]] = Store(
+            hass,
+            STORAGE_VERSION,
+            f"{DOMAIN}.fx_rates",
+        )
 
         # Update on midnight local (hass) time
         self._update_schedule: Callable[[], None] | None = (
@@ -979,6 +984,40 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
                 second=0,
             )
         )
+
+    @staticmethod
+    def _serialize(data: dict[str, Decimal]) -> dict[str, str]:
+        """Serialize currency rates for persistence."""
+        return {currency: str(rate) for currency, rate in data.items()}
+
+    @staticmethod
+    def _deserialize(raw: dict[str, str]) -> dict[str, Decimal]:
+        """Deserialize previously persisted currency rates."""
+        return {currency: Decimal(rate) for currency, rate in raw.items()}
+
+    async def async_load_persisted(self) -> bool:
+        """Load the last known good CNB rates from Home Assistant storage."""
+        if self.data is not None:
+            return True
+
+        raw = await self._store.async_load()
+        if not raw:
+            return False
+
+        try:
+            loaded = self._deserialize(raw)
+        except (InvalidOperation, TypeError, AttributeError) as exc:
+            _LOGGER.warning("Failed to deserialize persisted CNB FX rates: %s", exc)
+            return False
+
+        if not loaded:
+            return False
+
+        self.async_set_updated_data(loaded)
+        _LOGGER.debug(
+            "FxCoordinator loaded persisted data with %d currencies", len(loaded)
+        )
+        return True
 
     async def async_stop(self):
         """Cancel scheduled jobs."""
@@ -1040,6 +1079,12 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
     @override
     async def _async_update_data(self):
         rates = await self._fetch_data_with_retry()
+
+        try:
+            await self._store.async_save(self._serialize(rates))
+        except Exception:  # pragma: no cover - defensive, storage is local
+            _LOGGER.exception("Failed to persist CNB FX rates")
+
         return rates
 
 

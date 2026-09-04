@@ -189,6 +189,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: SpotRateConfigEnt
                 hass, config_entry, domain_data, FX_COORDINATOR
             )
             await fx_coordinator.async_register_shutdown()
+            # Restore the last known good rates before contacting CNB so
+            # converted-price sensors can survive a restart during an outage.
+            await fx_coordinator.async_load_persisted()
             # Fetch initial data (first refresh)
             await fx_coordinator.async_refresh()
         else:
