@@ -4,7 +4,7 @@ import logging
 from typing import Callable, override
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
@@ -250,6 +250,7 @@ class ElectricityPriceSensor(ElectricitySpotRateSensorBase):
 
 class SpotRateElectricitySensor(ElectricityPriceSensor):
     _name_template = "current_{trade}_electricity_price{interval}"
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,
@@ -549,6 +550,8 @@ class GasPriceSensor(SpotRateSensorBase):
 
 
 class TodayGasSensor(GasPriceSensor):
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
     def __init__(
         self,
         hass: HomeAssistant,
