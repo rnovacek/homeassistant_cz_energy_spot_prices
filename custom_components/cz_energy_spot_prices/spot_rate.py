@@ -87,6 +87,11 @@ class InvalidFormat(OTEFault):
     pass
 
 
+def is_unpublished_gas_price(commodity: Commodity, price: Decimal) -> bool:
+    """Return whether an OTE value is the unpublished gas placeholder."""
+    return commodity == Commodity.Gas and price == 0
+
+
 type RateByDatetime = dict[datetime, Decimal]
 type RatesByInterval = dict[SpotRateIntervalType, RateByDatetime]
 
@@ -105,9 +110,7 @@ class SpotRate:
         start: date,
         end: date,
     ) -> str:
-        return QUERY_ELECTRICITY.format(
-            start=start.isoformat(), end=end.isoformat()
-        )
+        return QUERY_ELECTRICITY.format(start=start.isoformat(), end=end.isoformat())
 
     def get_gas_query(self, start: date, end: date) -> str:
         return QUERY_GAS.format(start=start.isoformat(), end=end.isoformat())
@@ -245,14 +248,24 @@ class SpotRate:
                 raise ValueError(f"Invalid commodity {commodity}")  # pyright: ignore[reportUnreachable]
 
             price_el = item.find("{http://www.ote-cr.cz/schema/service/public}Price")
-            if price_el is None or price_el.text is None:
+            price_text = (
+                price_el.text.strip() if price_el is not None and price_el.text else ""
+            )
+            if not price_text:
                 _LOGGER.info(
                     'Item has no "Price" child or is empty: %s %s',
                     current_date,
                     current_hour,
                 )
                 continue
-            current_price = Decimal(price_el.text)
+            current_price = Decimal(price_text)
+            if is_unpublished_gas_price(commodity, current_price):
+                # OTE publishes an explicit 0.00 placeholder before the real
+                # next-day gas price is available. Treat it like a missing
+                # value so tomorrow-data availability remains false and the
+                # coordinator retries instead of exposing a fictitious zero.
+                _LOGGER.info("Ignoring unpublished zero gas price: %s", current_date)
+                continue
 
             current_hourly_price = Decimal(0)
             if commodity == Commodity.Electricity:

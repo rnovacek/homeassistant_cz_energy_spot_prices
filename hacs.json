@@ -1,5 +1,6 @@
 {
     "name": "Czech Energy Spot Prices",
     "render_readme": true,
-    "country": "CZ"
+    "country": "CZ",
+    "homeassistant": "2026.5.2"
 }

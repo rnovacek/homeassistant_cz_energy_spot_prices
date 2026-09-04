@@ -1,15 +1,16 @@
-
-
-
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import pytest
 from custom_components.cz_energy_spot_prices.const import SpotRateIntervalType
-from custom_components.cz_energy_spot_prices.coordinator import PRAGUE_TZ, SpotRateInterval, find_cheapest_window
+from custom_components.cz_energy_spot_prices.coordinator import (
+    PRAGUE_TZ,
+    SpotRateInterval,
+    find_cheapest_window,
+)
 
 
 BASE_DT = datetime(2025, 1, 1, 0, tzinfo=PRAGUE_TZ)
+
 
 @pytest.fixture
 def interval_one_value():
@@ -76,6 +77,7 @@ def interval_15mins():
 
     return interval_by_dt
 
+
 def test_find_cheapest_window_no_data():
     with pytest.raises(ValueError):
         _ = find_cheapest_window({}, hours=None, interval=SpotRateIntervalType.Hour)
@@ -84,29 +86,40 @@ def test_find_cheapest_window_no_data():
         _ = find_cheapest_window({}, hours=2, interval=SpotRateIntervalType.Hour)
 
     with pytest.raises(ValueError):
-        _ = find_cheapest_window({}, hours=None, interval=SpotRateIntervalType.QuarterHour)
+        _ = find_cheapest_window(
+            {}, hours=None, interval=SpotRateIntervalType.QuarterHour
+        )
 
     with pytest.raises(ValueError):
         _ = find_cheapest_window({}, hours=2, interval=SpotRateIntervalType.QuarterHour)
 
 
-def test_find_cheapest_window_not_enough_data(interval_one_value: dict[datetime, SpotRateInterval]):
+def test_find_cheapest_window_not_enough_data(
+    interval_one_value: dict[datetime, SpotRateInterval],
+):
     with pytest.raises(ValueError):
         _ = find_cheapest_window(
-            interval_by_dt=interval_one_value, hours=2, interval=SpotRateIntervalType.Hour
+            interval_by_dt=interval_one_value,
+            hours=2,
+            interval=SpotRateIntervalType.Hour,
         )
 
     with pytest.raises(ValueError):
         _ = find_cheapest_window(
-            interval_by_dt=interval_one_value, hours=1, interval=SpotRateIntervalType.QuarterHour
+            interval_by_dt=interval_one_value,
+            hours=1,
+            interval=SpotRateIntervalType.QuarterHour,
         )
 
 
-@pytest.mark.parametrize('hours,interval', [
-    (None, SpotRateIntervalType.Hour),
-    (1, SpotRateIntervalType.Hour),
-    (None, SpotRateIntervalType.QuarterHour),
-])
+@pytest.mark.parametrize(
+    "hours,interval",
+    [
+        (None, SpotRateIntervalType.Hour),
+        (1, SpotRateIntervalType.Hour),
+        (None, SpotRateIntervalType.QuarterHour),
+    ],
+)
 def test_find_cheapest_window_one_interval(
     interval_one_value: dict[datetime, SpotRateInterval],
     hours: int | None,
@@ -144,7 +157,9 @@ def test_find_cheapest_window_60min(
     offset: int,
 ):
     window = find_cheapest_window(
-        interval_by_dt=interval_60mins, hours=hours, interval=SpotRateIntervalType.Hour,
+        interval_by_dt=interval_60mins,
+        hours=hours,
+        interval=SpotRateIntervalType.Hour,
     )
     assert window.prices == prices
     assert window.start == BASE_DT + timedelta(hours=offset)

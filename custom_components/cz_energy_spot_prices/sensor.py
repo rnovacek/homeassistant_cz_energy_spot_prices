@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections.abc import Sequence
 import logging
-from typing import Any, Callable, cast, override
+from typing import Callable, override
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.sensor import SensorEntity
@@ -14,8 +14,6 @@ from .config_flow import (
     GAS,
 )
 from .const import (
-    DOMAIN,
-    ENTRY_COORDINATOR,
     SpotRateIntervalType,
 )
 from .coordinator import (
@@ -47,8 +45,7 @@ async def async_setup_entry(
         entry.options,
     )
 
-    domain_data = cast(dict[str, Any], hass.data[DOMAIN])
-    coordinator = cast(EntryCoordinator, domain_data[ENTRY_COORDINATOR][entry.entry_id])
+    coordinator = entry.runtime_data
 
     commodity = coordinator.config.commodity
 
@@ -332,7 +329,7 @@ class SpotRateElectricitySensor(ElectricityPriceSensor):
 
 class HourFindSensor(ElectricityPriceSensor):
     def find_interval(
-        self, _rate_data: IntervalTradeRateData | None
+        self, rate_data: IntervalTradeRateData | None
     ) -> SpotRateInterval | None:
         raise NotImplementedError()
 
