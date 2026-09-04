@@ -1,11 +1,12 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
-from typing import TypedDict, cast
-from zoneinfo import ZoneInfo
 from decimal import Decimal
-import aiohttp
 import json
+from typing import Any, TypedDict, cast
+from zoneinfo import ZoneInfo
+
+import aiohttp
 
 from homeassistant.util.dt import utcnow
 
@@ -23,11 +24,12 @@ class Rate(TypedDict):
     currency: str
     amount: int
     currencyCode: str
-    rate: Decimal
+    rate: Decimal | int
 
 
-def decimal_loads(s:str) -> dict[any]:
-    return json.loads(s, parse_float=Decimal)
+def _decimal_loads(data: str) -> Any:
+    """Decode JSON floating-point values without a binary float round-trip."""
+    return json.loads(data, parse_float=Decimal)
 
 
 class Rates(TypedDict):
@@ -82,7 +84,7 @@ class CnbRate:
                     raise CnbRateError(
                         f"Error {response.status} while downloading rates"
                     )
-                text = cast(Rates, await response.json(loads=decimal_loads))
+                text = cast(Rates, await response.json(loads=_decimal_loads))
         return text
 
     async def get_day_rates(self, day: date) -> dict[str, Decimal]:
@@ -104,7 +106,7 @@ class CnbRate:
             raise CnbRateError("Could not download CNB rates for last 7 days")
 
         for rate in cnb_rates["rates"]:
-            rates[rate["currencyCode"]] = rate["rate"]
+            rates[rate["currencyCode"]] = Decimal(rate["rate"])
 
         return rates
 
