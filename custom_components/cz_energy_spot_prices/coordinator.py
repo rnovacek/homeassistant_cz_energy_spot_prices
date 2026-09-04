@@ -1,16 +1,17 @@
+from typing import Callable
 from random import randint
 import aiohttp.client_exceptions
 import asyncio
-from collections.abc import Sequence
 import logging
 from datetime import datetime, timedelta, timezone, time
 from decimal import Decimal, InvalidOperation
-from typing import cast, final, override
+from typing import Any, cast, final, override
 from zoneinfo import ZoneInfo
 
-import async_timeout
+from asyncio import timeout
 
 from attr import dataclass
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
@@ -22,13 +23,21 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util.dt import now
 
+from .cheapest_blocks import PriceBlockSearch, find_price_block, resolve_search_window
 from .cnb_rate import CnbRate
-from .const import Commodity, Currency, DOMAIN, SpotRateIntervalType, EnergyUnit
+from .const import (
+    Commodity,
+    Currency,
+    DOMAIN,
+    EnergyUnit,
+    SpotRateIntervalType,
+)
 from .spot_rate import (
     RateByDatetime,
     RatesByInterval,
     SpotRate,
     OTEFault,
+    is_unpublished_gas_price,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,30 +62,42 @@ class EntryConfig:
     zoneinfo: ZoneInfo
     buy_template: Template | None
     sell_template: Template | None
-    cheapest_blocks: Sequence[int] | None
-    cheapest_blocks_cross_midnight: bool
+    cheapest_block_searches: list[PriceBlockSearch]
+    cheapest_blocks_cross_midnight: bool = False
+
+    def __attrs_post_init__(self) -> None:
+        """Normalize direct/test construction through the persisted-data parser."""
+        normalized: list[PriceBlockSearch] = []
+        for raw_search in cast(
+            list[PriceBlockSearch | dict[str, Any]], self.cheapest_block_searches
+        ):
+            if isinstance(raw_search, PriceBlockSearch):
+                normalized.append(raw_search)
+                continue
+            search = PriceBlockSearch.from_mapping(raw_search, interval=self.interval)
+            if search is not None:
+                normalized.append(search)
+        self.cheapest_block_searches = normalized
 
     def all_cheapest_blocks(self) -> list[int | None]:
-        """Return all cheapest blocks, including blocks that take just one interval (it's value is None)."""
+        """Return all cheapest blocks, including blocks that take just one interval (it's value is None).
+
+        Kept for backward compatibility with code that expects old-style blocks.
+        """
         # Insert None first - it means cheapest interval (hour for hourly interval, 15 min block for 15min interval)
         cheapest_blocks: list[int | None] = [None]
-        for block in self.cheapest_blocks or []:
-            try:
-                block = int(block)
-            except ValueError:
-                _LOGGER.error("Invalid interval for cheapest blocks: %s", block)
+        for search in self.cheapest_block_searches:
+            block = search.legacy_block_length
+            if block is None:
                 continue
 
             if block < 1 or block > 23:
-                _LOGGER.error("Invalid interval for cheapest blocks: %s", block)
                 continue
 
             if block == 1 and self.interval == SpotRateIntervalType.Hour:
-                # This is covered by having `None` in the array
                 continue
 
             if block in cheapest_blocks:
-                # Prevent duplication
                 continue
 
             cheapest_blocks.append(block)
@@ -170,6 +191,7 @@ class IntervalSpotRateData:
         self._today_tomorrow_by_dt: dict[datetime, SpotRateInterval] = {}
 
         self.cheapest_windows: dict[int | None, Window] = {}
+        self.search_windows: dict[str, Window] = {}
 
         # Create individual SpotRateInterval instances and compute statistics while doing that
         for utc_hour, rate in rates.items():
@@ -181,6 +203,11 @@ class IntervalSpotRateData:
                             {
                                 "value": float(rate),
                                 "hour": utc_hour,
+                                # Gas templates document this timestamp as
+                                # ``day``. Keep ``hour`` available as well for
+                                # backwards compatibility with existing
+                                # templates and the shared interval model.
+                                "day": utc_hour,
                             }
                         ),
                     )
@@ -206,10 +233,123 @@ class IntervalSpotRateData:
 
         for block in config.all_cheapest_blocks():
             if config.cheapest_blocks_cross_midnight and block is not None:
-                intervals_for_cheapest = self._today_tomorrow_by_dt
-            else:
-                intervals_for_cheapest = self._today_day.interval_by_dt
+                # Cross-midnight mode enabled for multi-hour blocks
+                # First, calculate cheapest block using all of today's data
+                intervals_for_cheapest_today = self._today_day.interval_by_dt.copy()
 
+                try:
+                    today_window = find_cheapest_window(
+                        intervals_for_cheapest_today,
+                        hours=block,
+                        interval=config.interval,
+                    )
+
+                    # Check if today's cheapest block has already passed
+                    block_has_passed = today_window.end <= self.now
+
+                    if block_has_passed and self._tomorrow_day is not None:
+                        # Block has passed AND tomorrow data is available
+                        # Calculate with only potential cross-midnight data:
+                        # Include only the last N hours of today that could create a cross-midnight window
+
+                        # Find midnight today in local time
+                        today_date = self.now.date()
+                        midnight_today = datetime.combine(
+                            today_date + timedelta(days=1),
+                            time(0, 0, 0),
+                            tzinfo=config.zoneinfo,
+                        ).astimezone(timezone.utc)
+
+                        # Calculate the earliest time that could start a cross-midnight block
+                        # For a block to cross midnight, it needs to start at most N-1 hours before midnight
+                        # Example: 3-hour block starting at 22:00 → 22:00, 23:00, 00:00 (crosses)
+                        #          3-hour block starting at 21:00 → 21:00, 22:00, 23:00 (doesn't cross)
+                        if config.interval == SpotRateIntervalType.Hour:
+                            # For hourly intervals: N-hour block has N intervals
+                            # Last interval is at start + (N-1) hours
+                            # To cross midnight: start + (N-1) >= midnight → start >= midnight - (N-1)
+                            earliest_cross_midnight_start = midnight_today - timedelta(
+                                hours=block - 1
+                            )
+                        else:
+                            # For quarter-hour intervals: N-hour block has N*4 intervals (each 15 min)
+                            # Last interval is at start + (N*4-1) * 15 minutes = start + (N hours - 15 min)
+                            # To cross midnight: start + (N hours - 15 min) >= midnight
+                            # → start >= midnight - N hours + 15 min
+                            earliest_cross_midnight_start = (
+                                midnight_today
+                                - timedelta(hours=block)
+                                + timedelta(minutes=15)
+                            )
+
+                        # Only include intervals from today that could cross midnight
+                        intervals_for_cheapest: dict[datetime, SpotRateInterval] = {
+                            dt: interval
+                            for dt, interval in self._today_day.interval_by_dt.items()
+                            if interval.dt_utc >= earliest_cross_midnight_start
+                        }
+                        intervals_for_cheapest.update(self._tomorrow_day.interval_by_dt)
+                        _LOGGER.debug(
+                            "Cheapest %s-hour block: has passed, using %d cross-midnight intervals from today (from %s) + %d from tomorrow",
+                            block,
+                            len(
+                                [
+                                    dt
+                                    for dt, interval in self._today_day.interval_by_dt.items()
+                                    if interval.dt_utc >= earliest_cross_midnight_start
+                                ]
+                            ),
+                            earliest_cross_midnight_start.astimezone(
+                                config.zoneinfo
+                            ).strftime("%H:%M"),
+                            len(self._tomorrow_day.interval_by_dt),
+                        )
+                    else:
+                        # Block hasn't passed OR tomorrow data not available
+                        # Use all of today's data (with tomorrow if available)
+                        intervals_for_cheapest = intervals_for_cheapest_today.copy()
+                        if self._tomorrow_day is not None:
+                            intervals_for_cheapest.update(
+                                self._tomorrow_day.interval_by_dt
+                            )
+                            _LOGGER.debug(
+                                "Cheapest %s-hour block: still valid, using all %d intervals from today + %d from tomorrow",
+                                block,
+                                len(self._today_day.interval_by_dt),
+                                len(self._tomorrow_day.interval_by_dt),
+                            )
+                        else:
+                            _LOGGER.debug(
+                                "Cheapest %s-hour block: using all %d intervals from today",
+                                block,
+                                len(intervals_for_cheapest),
+                            )
+                except ValueError:
+                    # Could not calculate today's window, use all available data
+                    intervals_for_cheapest = self._today_day.interval_by_dt.copy()
+                    if self._tomorrow_day is not None:
+                        intervals_for_cheapest.update(self._tomorrow_day.interval_by_dt)
+                    _LOGGER.debug(
+                        "Cheapest %s-hour block: could not calculate today's window, using all available data",
+                        block,
+                    )
+            else:
+                # Cross-midnight disabled OR single interval (block is None)
+                # Always use ALL of today's data for consistency
+                intervals_for_cheapest = self._today_day.interval_by_dt.copy()
+                _LOGGER.debug(
+                    "Cheapest %s block: no cross_midnight, using all %d intervals from today",
+                    "interval" if block is None else f"{block}-hour",
+                    len(intervals_for_cheapest),
+                )
+
+            # Validate we have intervals
+            if not intervals_for_cheapest:
+                _LOGGER.warning(
+                    "No intervals available for cheapest %s block calculation",
+                    "interval" if block is None else f"{block}-hour",
+                )
+                continue
             try:
                 window = find_cheapest_window(
                     intervals_for_cheapest,
@@ -222,6 +362,53 @@ class IntervalSpotRateData:
                     _LOGGER.error("Unable to find cheapest interval")
                 else:
                     _LOGGER.error("Unable to find cheapest %s hour block", block)
+
+        # Compute configured lowest/highest price windows.
+        sorted_intervals = sorted(self.interval_by_dt.items(), key=lambda item: item[0])
+        available_start = sorted_intervals[0][0] if sorted_intervals else None
+        available_end = None
+        interval_seconds = (
+            900 if config.interval == SpotRateIntervalType.QuarterHour else 3600
+        )
+        if sorted_intervals:
+            available_end = sorted_intervals[-1][0] + timedelta(
+                seconds=interval_seconds
+            )
+        for search in config.cheapest_block_searches:
+            window_bounds = resolve_search_window(
+                search,
+                self.now,
+                available_end,
+                available_start,
+            )
+            if window_bounds is None:
+                _LOGGER.debug("Search %s: could not resolve window", search.id)
+                continue
+
+            window_start, window_end = window_bounds
+            result = find_price_block(
+                [(dt, interval.price) for dt, interval in sorted_intervals],
+                window_start.astimezone(timezone.utc),
+                window_end.astimezone(timezone.utc),
+                search.length_hours,
+                search.objective,
+                interval_seconds=interval_seconds,
+            )
+            if result is None:
+                _LOGGER.debug(
+                    "Search %s: no %s price block found in window %s - %s",
+                    search.id,
+                    search.objective,
+                    window_start,
+                    window_end,
+                )
+                continue
+
+            self.search_windows[search.id] = Window(
+                start=result["start"],
+                end=result["end"],
+                prices=result["prices"],
+            )
 
     def interval_for_dt(self, dt: datetime) -> SpotRateInterval:
         if self.config.interval == SpotRateIntervalType.Day:
@@ -393,44 +580,23 @@ def find_cheapest_window(
     hours: int | None,
     interval: SpotRateIntervalType,
 ) -> Window:
-    # window size is how many interval will fit into given X hours block
-    window_size = 1
-    if hours is not None:
-        if interval == SpotRateIntervalType.Hour:
-            window_size = hours
-        else:
-            window_size = hours * 4
-
-    all_prices = [i.price for i in interval_by_dt.values()]
-
-    min_sum = None
-    min_sum_start = None
-    min_sum_end = None
-    min_sum_prices = None
-
-    for i, (dt, _) in enumerate(interval_by_dt.items()):
-        window = all_prices[i : (i + window_size)]
-        if len(window) != window_size:
-            continue
-
-        window_sum = sum(window)
-        if min_sum is None or window_sum < min_sum:
-            min_sum = window_sum
-            min_sum_start = dt
-            if interval == SpotRateIntervalType.Hour:
-                min_sum_end = dt + timedelta(hours=window_size)
-            else:
-                min_sum_end = dt + timedelta(minutes=window_size * 15)
-            min_sum_prices = window
-
-    if min_sum_start is None or min_sum_end is None or min_sum_prices is None:
+    """Find a legacy cheapest window using the shared block-search engine."""
+    sorted_intervals = sorted(interval_by_dt.items())
+    if not sorted_intervals:
         raise ValueError()
-
-    return Window(
-        start=min_sum_start,
-        end=min_sum_end,
-        prices=min_sum_prices,
+    interval_hours = 0.25 if interval == SpotRateIntervalType.QuarterHour else 1.0
+    length_hours = float(hours) if hours is not None else interval_hours
+    interval_delta = timedelta(hours=interval_hours)
+    result = find_price_block(
+        [(dt, value.price) for dt, value in sorted_intervals],
+        sorted_intervals[0][0],
+        sorted_intervals[-1][0] + interval_delta,
+        length_hours,
+        interval_seconds=int(interval_delta.total_seconds()),
     )
+    if result is None:
+        raise ValueError()
+    return Window(result["start"], result["end"], result["prices"])
 
 
 @final
@@ -455,6 +621,7 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=None,
             name=f"Czech Energy Spot Prices [SpotRateCoordinator] for {commodity}",
         )
         self.hass = hass
@@ -510,13 +677,37 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
 
         try:
             loaded = self._deserialize(raw)
-        except (ValueError, KeyError, InvalidOperation) as exc:
+        except (
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+            InvalidOperation,
+        ) as exc:
             _LOGGER.warning(
                 "Failed to deserialize persisted spot rates for %s: %s",
                 self._commodity,
                 exc,
             )
             return False
+
+        if self._commodity == Commodity.Gas:
+            gas_rates = loaded.get(SpotRateIntervalType.Day)
+            if gas_rates is None:
+                _LOGGER.warning("Persisted gas spot rates contain no daily data")
+                return False
+            zero_datetimes = [
+                dt
+                for dt, price in gas_rates.items()
+                if is_unpublished_gas_price(self._commodity, price)
+            ]
+            for dt in zero_datetimes:
+                gas_rates.pop(dt)
+            if zero_datetimes:
+                _LOGGER.info(
+                    "Discarded %d unpublished zero gas price(s) from persisted data",
+                    len(zero_datetimes),
+                )
 
         self._spot_rate_data = loaded
         self.async_set_updated_data(loaded)
@@ -550,7 +741,9 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
             # We don't have data for tomorrow, next update will be today
             if self.DATA_AVAILABLE_TIME < now_prague.time():
                 # Update time already happened today but we don't have tomorrow data, schedule update soon
-                local_target = now_prague + timedelta(seconds=self.DATA_RESCHEDULE_DELAY)
+                local_target = now_prague + timedelta(
+                    seconds=self.DATA_RESCHEDULE_DELAY
+                )
             else:
                 # Update 13:02 today
                 local_target = datetime.combine(
@@ -607,12 +800,16 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         _LOGGER.debug("SpotRateCoordinator[%s]._fetch_data_with_retry", self._commodity)
         current_delay = min(2**self._retry_attempt, self.MAX_RETRY_DELAY)
         try:
-            async with async_timeout.timeout(30):
+            async with timeout(30):
                 data = await self._fetch_data()
                 self._retry_attempt = 0
                 return data
 
-        except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
+        except (
+            OTEFault,
+            aiohttp.client_exceptions.ClientError,
+            asyncio.TimeoutError,
+        ) as e:
             _LOGGER.warning(
                 "Failed to update OTE prices, will retry in %d seconds: %s",
                 current_delay,
@@ -650,9 +847,8 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
             # When DST changes, it might be 11 or 13 hours, but that doesn't matter
             # for just checking if tomorrow data are available
             noon_tomorrow = (
-                now(PRAGUE_TZ).replace(
-                    hour=12, minute=0, second=0, microsecond=0
-                ) + timedelta(days=1)
+                now(PRAGUE_TZ).replace(hour=12, minute=0, second=0, microsecond=0)
+                + timedelta(days=1)
             ).astimezone(timezone.utc)
 
             return (
@@ -766,6 +962,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=None,
             name="Czech Energy Spot Prices [FxCoordinator]",
         )
 
@@ -773,12 +970,14 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
         self._retry_attempt = 0
 
         # Update on midnight local (hass) time
-        self._update_schedule = event.async_track_time_change(
-            hass=self.hass,
-            action=self.on_schedule,
-            hour=0,
-            minute=0,
-            second=0,
+        self._update_schedule: Callable[[], None] | None = (
+            event.async_track_time_change(
+                hass=self.hass,
+                action=self.on_schedule,
+                hour=0,
+                minute=0,
+                second=0,
+            )
         )
 
     async def async_stop(self):
@@ -802,12 +1001,16 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
         _LOGGER.debug("FxCoordinator._fetch_data_with_retry")
         current_delay = min(2**self._retry_attempt, self.MAX_RETRY_DELAY)
         try:
-            async with async_timeout.timeout(30):
+            async with timeout(30):
                 data = await self._fetch_data()
                 self._retry_attempt = 0
                 return data
 
-        except (OTEFault, aiohttp.client_exceptions.ClientError, asyncio.TimeoutError) as e:
+        except (
+            OTEFault,
+            aiohttp.client_exceptions.ClientError,
+            asyncio.TimeoutError,
+        ) as e:
             _LOGGER.warning(
                 "Failed to update CNB FX rates, will retry in %d seconds: %s",
                 current_delay,
@@ -844,6 +1047,7 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         spot_coordinator: SpotRateCoordinator,
         fx_coordinator: FxCoordinator | None,
         config: EntryConfig,
@@ -853,8 +1057,12 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
         self._spot_rates = None
         self._cnb_rate = None
         self._config = config
+        self._loaded_entry_data = dict(config_entry.data)
+        self._loaded_entry_options = dict(config_entry.options)
 
-        self._unsub_core = spot_coordinator.async_add_listener(self._source_updated)
+        self._unsub_core: Callable[[], None] | None = (
+            spot_coordinator.async_add_listener(self._source_updated)
+        )
         self._unsub_fx = (
             fx_coordinator.async_add_listener(self._source_updated)
             if fx_coordinator
@@ -864,10 +1072,11 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=f"Czech Energy Spot Prices [EntryCoordinator {config.unit, config.currency, config.commodity, config.interval}]",
         )
 
-        self._unschedule = event.async_track_utc_time_change(
+        self._unschedule: Callable[[], None] | None = event.async_track_utc_time_change(
             hass,
             self.on_schedule,
             minute=[0, 15, 30, 45],
@@ -958,3 +1167,20 @@ class EntryCoordinator(DataUpdateCoordinator[IntervalTradeRateData | None]):
     @property
     def config(self) -> EntryConfig:
         return self._config
+
+    def parent_config_is_current(self, config_entry: ConfigEntry) -> bool:
+        """Return whether an update changed neither parent data nor options."""
+        return (
+            dict(config_entry.data) == self._loaded_entry_data
+            and dict(config_entry.options) == self._loaded_entry_options
+        )
+
+    @callback
+    def async_replace_price_block_searches(
+        self, searches: list[PriceBlockSearch]
+    ) -> None:
+        """Recompute derived data after a subentry-only configuration change."""
+        self._config.cheapest_block_searches = searches
+        data = self._compute_data()
+        if data is not None:
+            self.async_set_updated_data(data)

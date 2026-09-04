@@ -136,6 +136,36 @@ async def test_gas_buy_template_applied(
 
 
 @pytest.mark.asyncio
+async def test_gas_buy_template_receives_day(
+    hass: HomeAssistant,
+    mock_ote_gas: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Gas templates receive the documented delivery-day timestamp."""
+    await hass.config.async_set_time_zone("Europe/Prague")
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [
+                get_gas_entry(
+                    currency="EUR",
+                    unit="MWh",
+                    buy_template="{{ value + as_local(day).day }}",
+                )
+            ],
+        )
+
+        buy_today = hass.states.get("sensor.current_buy_gas_price")
+        assert buy_today is not None
+        assert approx(buy_today.state) == 34.05 + 22
+
+        buy_tomorrow = hass.states.get("sensor.tomorrow_buy_gas_price")
+        assert buy_tomorrow is not None
+        assert approx(buy_tomorrow.state) == 34.31 + 23
+
+
+@pytest.mark.asyncio
 async def test_has_tomorrow_gas_data_sensor(
     hass: HomeAssistant,
     mock_ote_gas: AsyncMock,

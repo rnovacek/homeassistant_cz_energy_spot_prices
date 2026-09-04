@@ -13,7 +13,7 @@ If this integration saves (or earns) you some money, you can [buy me a coffee â˜
 - Supports multiple currencies (EUR, CZK) and energy units (kWh, MWh).
 - Configurable templates for buy/sell prices, including VAT and distribution fees.
 - Includes sensors for monitoring current, cheapest, and most expensive electricity prices.
-- Configurable binary sensors for the cheapest **consecutive hour blocks** in a day (e.g. cheapest 2, 4 or 8 hours in a row).
+- Configurable binary sensors for lowest- and highest-priced **consecutive blocks**, including today, tomorrow, and chosen time windows.
 - Persists last downloaded prices across Home Assistant restarts so sensors are available immediately on startup.
 - Compatible with Home Assistant automations for energy optimization.
 
@@ -25,7 +25,7 @@ You can add the integration multiple times to combine commodities and intervals,
 - another instance for 15-minute electricity spot prices,
 - another instance for gas spot prices.
 
-Each instance is configured separately (currency, unit, buy/sell template, cheapest blocks).
+Each instance is configured separately (currency, unit, buy/sell template, price block searches).
 
 ### Important note
 
@@ -116,7 +116,7 @@ You can install the integration using HACS (preferred) or manually.
 1. Go to **Settings** -> **Devices & Services** -> **Add integration**.
 2. Search for "Czech Energy Spot Prices" and select it.
 3. Pick the **commodity** (electricity or gas), **currency** and **energy unit**. For electricity you will also be asked to choose the **interval** (60 minutes or 15 minutes).
-4. (Optional) Use the "Configure" button to set templates for buy/sell prices (see above) and the list of cheapest consecutive hour blocks (see [Cheapest consecutive hour blocks](#cheapest-consecutive-hour-blocks)).
+4. (Optional) Use **Configure** to set templates for buy/sell prices. To create a price block search, open the integration page and choose **Add price block search** (see [Price block searches](#price-block-searches)).
 5. (Optional) Repeat the steps to add another instance for a different commodity or interval (see [Multiple instances](#multiple-instances)).
 
 ## Sensors
@@ -138,7 +138,7 @@ When the 15-minute interval is selected, the same sensors are also created with 
 | **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `[order, price]` as values |
 | **Spot Electricity Has Tomorrow Data** | `On` when data for tomorrow are loaded, `Off` otherwise (created only once for all electricity instances) | |
 | **Spot Electricity Is Cheapest** | `On` when current interval has the cheapest price of the day, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
-| **Spot Electricity Is Cheapest `X` Hours Block** | `On` when current time falls inside the cheapest consecutive `X` hour block of the day, `Off` otherwise (one sensor per `X` configured in [Cheapest consecutive hour blocks](#cheapest-consecutive-hour-blocks)) | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
+| **Spot/Buy/Sell Price Block Search** | `On` when current time falls inside a configured lowest- or highest-price consecutive block search (one binary sensor per configured search) | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
 
 If you configure templates for buy and sell prices, there will also be similar `Buy *` and `Sell *` sensors with the same structure.
 
@@ -166,50 +166,184 @@ hour with the cheapest electricity (`2` means that cheapest electricity is from 
 
 ### Start
 
-timestamp when consecutive block of cheapest hours starts, only available when the block is in the future
+timestamp when the selected price block starts
 
 ### Start hour
 
-hour when consecutive block of cheapest hours starts, only available when the block is in the future
+hour when the selected price block starts, available for 60-minute electricity intervals
 
 ### End
 
-timestamp when consecutive block of cheapest hours ends, only available when the block is in the future
+timestamp when the selected price block ends
 
 ### End hour
 
-hour when consecutive block of cheapest hours ends, only available when the block is in the future
+hour when the selected price block ends, available for 60-minute electricity intervals
 
 ### Min
 
-minimal price in the block, only available when the block is in the future
+minimal price in the selected price block
 
 ### Max
 
-maximal price in the block, only available when the block is in the future
+maximal price in the selected price block
 
 ### Mean
 
-average (mean) price in the block, only available when the block is in the future
+average (mean) price in the selected price block
 
 
-## Cheapest consecutive hour blocks
+## Price block searches
 
-In addition to the always-present *Spot Electricity Is Cheapest* binary sensor (which marks the single cheapest interval of the day), you can ask the integration to create binary sensors for the cheapest **consecutive** hour blocks of the day.
+In addition to the always-present *Spot Electricity Is Cheapest* binary sensor (which marks the single cheapest interval of the day), you can create custom **consecutive price block** searches for either the lowest or highest prices.
 
-Open **Configure** on the integration card and fill the *Cheapest consecutive hour blocks* field with a comma-separated list of hour lengths, for example:
+Open the **Czech Energy Spot Prices** integration page and choose **Add price block search**. If you have more than one electricity configuration, Home Assistant first asks which one the search belongs to. Choose the search period, then configure its name, price source, objective, duration, and window times when applicable.
 
+Each search is shown as a separate entry beneath its electricity configuration. Its headline summarizes the configured name, search period, objective, price source, and duration. Use the gear button beside it to reconfigure the search, or its menu to rename or delete it. Each search creates one binary sensor. The sensor turns `On` while the current time falls inside the matching block, and its attributes contain the selected interval:
+
+- `Start` and `End`
+- `Min`, `Max`, and `Mean` price in the block
+- `Length hours`, `Price type`, `Objective`, and `Search type`
+
+Fixed time-window searches are evaluated only when prices cover the complete configured window. Until an upcoming cross-midnight window is fully published, the sensor retains the latest fully evaluated occurrence and remains `Off` once that occurrence has ended.
+
+For 60-minute electricity instances, the sensor also exposes `Start hour` and `End hour`. For 15-minute instances, the start and end timestamps are more precise than whole hours, so use `Start` and `End`.
+
+### Search periods
+
+The **Search period** decides where the integration is allowed to look for the price block:
+
+| Search period | What it means | Good for |
+| ----- | ------------- | -------- |
+| **Today** | Finds the selected price block between midnight and midnight today. | A device that must run today, for example a dishwasher, washing machine, dryer, or daytime water heating cycle. |
+| **Tomorrow plan** | Finds the selected price block in tomorrow's prices. The binary sensor stays `Off`; its attributes show the planned block after tomorrow's prices are published by OTE. | Planning ahead, for example pre-scheduling an EV charge, night storage heater, or heat pump boost for tomorrow. |
+| **Time window** | Finds the selected price block between the configured start and end times. If the end time is earlier than the start time, the window continues after midnight. | Night-only loads, for example charging an EV only between `22:00` and `06:00`, or targeting high-price export periods. |
+
+Choose the **Find** objective according to the automation:
+
+- **Lowest price** selects the consecutive block with the lowest total price, normally used for consumption.
+- **Highest price** selects the consecutive block with the highest total price, useful for export, battery discharge, or avoiding consumption. Equal-price results choose the earliest block.
+
+Choose the **Price source** according to the decision you are automating:
+
+- **Spot** uses raw spot market prices.
+- **Buy** uses your buy template, including VAT, distribution, high/low tariff logic, and other fees.
+- **Sell** uses your sell template, useful when deciding when not to consume solar energy or when to export instead of charge.
+
+For most household automations that turn devices on, **Buy** is usually the right price type if you configured a buy template. It reflects what you actually pay, not only the market price.
+
+### Real-world examples
+
+**Run a dishwasher during the cheapest 2 hours today**
+
+Create a search:
+
+- Name: `Dishwasher today`
+- Search period: `Today`
+- Find: `Lowest price`
+- Duration: `2 h`
+- Price source: `Buy`
+
+Then use the created binary sensor as the condition or trigger for the dishwasher smart plug:
+
+```yaml
+alias: Dishwasher during cheapest block
+trigger:
+  - platform: state
+    entity_id: binary_sensor.buy_cheapest_block_dishwasher_today
+    to: "on"
+action:
+  - service: switch.turn_on
+    target:
+      entity_id: switch.dishwasher
+mode: single
 ```
-2, 4, 8
+
+**Charge an EV overnight, but only in the cheapest 4 hours**
+
+Create a search:
+
+- Name: `EV overnight`
+- Search period: `Time window`
+- Find: `Lowest price`
+- Window starts: `22:00`
+- Window ends: `06:00`
+- Duration: `4 h`
+- Price source: `Buy`
+
+The window may cross midnight, so this works for the common case where the car should only charge overnight:
+
+```yaml
+alias: EV cheapest overnight charging
+trigger:
+  - platform: state
+    entity_id: binary_sensor.buy_cheapest_block_ev_overnight
+action:
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.buy_cheapest_block_ev_overnight
+            state: "on"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: switch.ev_charger
+    default:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.ev_charger
+mode: single
 ```
 
-This creates three additional binary sensors:
+**Top up a home battery during a daytime price dip**
 
-- `binary_sensor.spot_electricity_is_cheapest_2_hours_block`
-- `binary_sensor.spot_electricity_is_cheapest_4_hours_block`
-- `binary_sensor.spot_electricity_is_cheapest_8_hours_block`
+Create a search:
 
-Each sensor turns `On` while the current time falls inside the cheapest contiguous window of the given length within today's prices. Equivalent `buy_*` and `sell_*` sensors are created when the corresponding templates are configured. Each block is computed within a single day (it does not span midnight).
+- Name: `Battery afternoon`
+- Search period: `Time window`
+- Window starts: `12:00`
+- Window ends: `20:00`
+- Duration: `2 h`
+- Price source: `Buy`
+
+This is useful when the battery can charge during the afternoon or evening, but you want to avoid the most expensive part of that window:
+
+```yaml
+alias: Battery charge during cheapest afternoon block
+trigger:
+  - platform: state
+    entity_id: binary_sensor.buy_cheapest_block_battery_afternoon
+action:
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.buy_cheapest_block_battery_afternoon
+            state: "on"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: switch.battery_charging
+    default:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.battery_charging
+mode: single
+```
+
+**Prepare tomorrow's heating boost**
+
+Create a search:
+
+- Name: `Heating tomorrow`
+- Search period: `Tomorrow plan`
+- Duration: `3 h`
+- Price source: `Buy`
+
+Use it for devices that can be scheduled after tomorrow's prices are known, such as a heat pump boost or storage heater. The binary sensor stays off, but its `Start`, `End`, `Min`, `Max`, and `Mean` attributes show the cheapest 3-hour block planned for tomorrow.
+
+### Upgrading from older versions
+
+Older versions used a comma-separated *Cheapest consecutive hour blocks* option such as `2, 4, 8`. Existing configurations are migrated to named searches automatically. The old `2` hour length becomes searches like `Today 2h` and `Tomorrow 2h`, so existing users keep the same practical coverage while gaining editable names, search periods, and price sources.
 
 
 ## Displaying a chart
@@ -348,4 +482,3 @@ mode: single
 ## License
 
 This integration is under [Apache 2.0 License](./LICENSE.txt), the same license as Home Assistant itself.
-

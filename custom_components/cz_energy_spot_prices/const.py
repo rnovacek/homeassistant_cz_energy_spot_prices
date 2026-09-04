@@ -19,6 +19,10 @@ CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY = "additional_costs_sell_electricity"
 CONF_ADDITIONAL_COSTS_BUY_GAS = "additional_costs_buy_gas"
 CONF_CHEAPEST_BLOCKS = "cheapest_blocks"
 CONF_ALLOW_CROSS_MIDNIGHT = "allow_cross_midnight"
+CONF_PRICE_TYPE = "price_type"
+CONF_SEARCH_OBJECTIVE = "objective"
+PRICE_BLOCK_SUBENTRY_TYPE = "price_block"
+CONF_CONFIG_SUBENTRY_ID = "config_subentry_id"
 
 # Tracks the entry_id of the entry that owns the per-commodity global
 # binary sensor (e.g. ``binary_sensor.spot_electricity_has_tomorrow_data``).
@@ -31,6 +35,23 @@ class SpotRateIntervalType(StrEnum):
     QuarterHour = "15min"
     Hour = "60min"
     Day = "1day"
+
+
+class SearchType(StrEnum):
+    TODAY = "today"
+    TOMORROW = "tomorrow"
+    FIXED = "fixed"
+
+
+class SearchObjective(StrEnum):
+    LOWEST = "lowest"
+    HIGHEST = "highest"
+
+
+class PriceType(StrEnum):
+    SPOT = "spot"
+    BUY = "buy"
+    SELL = "sell"
 
 
 class Commodity(StrEnum):
