@@ -123,6 +123,8 @@ You can install the integration using HACS (preferred) or manually.
 
 The integration provides several sensors to monitor electricity/gas prices and related data. Below is a list of available sensors and their attributes.
 
+Current electricity and gas price sensors support Home Assistant long-term statistics and can be used in the Statistics Graph card. Statistics are collected from the time the integration version containing this support is installed; existing history is not backfilled. For electricity, the graph shows the historical state of the current-price sensor, not the future prices exposed in its attributes.
+
 ### Electricity sensors
 
 When the 15-minute interval is selected, the same sensors are also created with the `_15min` suffix in their entity id (e.g. `sensor.current_spot_electricity_price_15min`).

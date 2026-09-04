@@ -115,6 +115,8 @@ async def test_electricity_spot_rate_sensor(
                 sensor_60min.attributes["unit_of_measurement"]
                 == f"{'€' if currency == 'EUR' else 'Kč'}/{unit}"
             )
+            assert sensor_60min.attributes["state_class"] == "measurement"
+            assert "device_class" not in sensor_60min.attributes
             assert sensor_60min.attributes["icon"] == icon
             assert (
                 sensor_60min.attributes["friendly_name"]
@@ -144,6 +146,8 @@ async def test_electricity_spot_rate_sensor(
                 sensor_15min.attributes["unit_of_measurement"]
                 == f"{'€' if currency == 'EUR' else 'Kč'}/{unit}"
             )
+            assert sensor_15min.attributes["state_class"] == "measurement"
+            assert "device_class" not in sensor_15min.attributes
             assert sensor_15min.attributes["icon"] == icon
             assert (
                 sensor_15min.attributes["friendly_name"]
@@ -205,6 +209,7 @@ async def test_cheapest_sensor(
             attr["unit_of_measurement"]
             == f"{'€' if currency == 'EUR' else 'Kč'}/{unit}"
         )
+        assert "state_class" not in attr
         assert attr["icon"] == "mdi:cash"
 
         sensor_15min = hass.states.get(

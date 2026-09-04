@@ -87,11 +87,14 @@ async def test_today_tomorrow_gas_spot_sensors(
             attr["unit_of_measurement"]
             == f"{'€' if currency == 'EUR' else 'Kč'}/{unit}"
         )
+        assert attr["state_class"] == "measurement"
+        assert "device_class" not in attr
         assert attr["icon"] == "mdi:cash"
 
         tomorrow = hass.states.get("sensor.tomorrow_spot_gas_price")
         assert tomorrow is not None
         assert approx(tomorrow.state) == tomorrow_eur_per_mwh * rate
+        assert "state_class" not in tomorrow.attributes
 
 
 @pytest.mark.asyncio
@@ -129,10 +132,12 @@ async def test_gas_buy_template_applied(
         buy_today = hass.states.get("sensor.current_buy_gas_price")
         assert buy_today is not None
         assert approx(buy_today.state) == today_eur_per_mwh + offset
+        assert buy_today.attributes["state_class"] == "measurement"
 
         buy_tomorrow = hass.states.get("sensor.tomorrow_buy_gas_price")
         assert buy_tomorrow is not None
         assert approx(buy_tomorrow.state) == tomorrow_eur_per_mwh + offset
+        assert "state_class" not in buy_tomorrow.attributes
 
 
 @pytest.mark.asyncio
