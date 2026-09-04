@@ -61,7 +61,7 @@ class SpotRateSensorMixin(CoordinatorEntity[EntryCoordinator]):
         super()._handle_coordinator_update()
 
     def _get_utility_rate_data(
-        self, _rate_data: IntervalTradeRateData
+        self, rate_data: IntervalTradeRateData
     ) -> IntervalTradeRateData | DailyTradeRateData:
         raise NotImplementedError()
 
@@ -72,15 +72,9 @@ class SpotRateSensorMixin(CoordinatorEntity[EntryCoordinator]):
             case Trade.BUY:
                 return rate_data.buy_rates
             case Trade.SELL:
-                if not rate_data.sell_rates:
-                    # For gas, we only have daily rates
-                    raise ValueError(
-                        f"Trade type '{self._trade}' is not applicable for daily rates."
-                    )
-
                 return rate_data.sell_rates
 
-    def update(self, _rate_data: IntervalTradeRateData | None) -> None:
+    def update(self, rate_data: IntervalTradeRateData | None) -> None:
         raise NotImplementedError()
 
     @property

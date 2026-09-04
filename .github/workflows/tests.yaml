@@ -23,11 +23,17 @@ jobs:
       - name: Install the project
         run: uv sync --refresh --dev
 
-      - name: Use latest homeassistant
-        run: uv pip install -U homeassistant
+      - name: Use latest compatible Home Assistant test stack
+        run: >-
+          uv pip install --upgrade
+          --prerelease disallow
+          homeassistant
+          pytest-homeassistant-custom-component
 
       - name: List dependencies
-        run: uv tree -d 1
+        run: uv pip tree -d 1
 
       - name: Run tests
-        run: uv run pytest -vv
+        # Do not let `uv run` resync the older lockfile over the upgraded
+        # environment prepared above.
+        run: uv run --no-sync pytest -vv

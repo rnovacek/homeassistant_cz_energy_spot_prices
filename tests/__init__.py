@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.core import HomeAssistant
 import pytest
@@ -18,6 +19,7 @@ from custom_components.cz_energy_spot_prices.const import (
     CONF_ALLOW_CROSS_MIDNIGHT,
     CONF_CHEAPEST_BLOCKS,
     DOMAIN,
+    PRICE_BLOCK_SUBENTRY_TYPE,
     SpotRateIntervalType,
 )
 from custom_components.cz_energy_spot_prices.coordinator import PRAGUE_TZ, Window
@@ -59,7 +61,27 @@ def get_entry(
     interval: SpotRateIntervalType = SpotRateIntervalType.Hour,
     cheapest_blocks: str | None = "",
     allow_cross_midnight: bool = False,
+    cheapest_block_searches: list[dict[str, Any]] | None = None,
 ):
+    options: dict[str, Any] = {
+        CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY: "{{ value + 10 }}",
+        CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY: "{{ value - 1 }}",
+        CONF_ALLOW_CROSS_MIDNIGHT: allow_cross_midnight,
+    }
+    subentries_data = []
+    if cheapest_block_searches is None:
+        options[CONF_CHEAPEST_BLOCKS] = cheapest_blocks
+    else:
+        subentries_data = [
+            {
+                "data": search,
+                "subentry_type": PRICE_BLOCK_SUBENTRY_TYPE,
+                "title": str(search["name"]),
+                "unique_id": str(search["id"]),
+            }
+            for search in cheapest_block_searches
+        ]
+
     return MockConfigEntry(
         domain=DOMAIN,
         title=(
@@ -74,12 +96,8 @@ def get_entry(
             CONF_UNIT_OF_MEASUREMENT: unit,
             CONF_INTERVAL: interval,
         },
-        options={
-            CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY: "{{ value + 10 }}",
-            CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY: "{{ value - 1 }}",
-            CONF_CHEAPEST_BLOCKS: cheapest_blocks,
-            CONF_ALLOW_CROSS_MIDNIGHT: allow_cross_midnight,
-        },
+        options=options,
+        subentries_data=subentries_data,
         minor_version=1,
     )
 

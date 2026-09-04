@@ -12,6 +12,26 @@
                 "60min": "60 minút",
                 "15min": "15 minút"
             }
+        },
+        "search_type": {
+            "options": {
+                "today": "Dnes - cenový blok v dnešných cenách",
+                "tomorrow": "Plán na zajtra - atribúty ukazujú zajtrajší cenový blok",
+                "fixed": "Časové okno - cenový blok medzi zvolenými časmi"
+            }
+        },
+        "search_objective": {
+            "options": {
+                "lowest": "Najnižšia cena",
+                "highest": "Najvyššia cena"
+            }
+        },
+        "price_type": {
+            "options": {
+                "spot": "Spotová",
+                "buy": "Nákupná",
+                "sell": "Predajná"
+            }
         }
     },
     "config": {
@@ -39,24 +59,62 @@
     "options": {
         "step": {
             "init": {
+                "title": "Možnosti",
+                "menu_options": {
+                    "configure_templates": "Nastaviť šablóny cien"
+                }
+            },
+            "configure_templates": {
+                "title": "Šablóny cien",
                 "data": {
                     "additional_costs_buy_electricity": "Cena elektriny pri nákupe",
                     "additional_costs_sell_electricity": "Cena elektriny pri predaji",
-                    "additional_costs_buy_gas": "Cena plynu pri nákupe",
-                    "cheapest_blocks": "Najlacnejšie bloky po sebe nasledujúcich hodín",
-                    "allow_cross_midnight": "Povoliť prechod najlacnejších blokov cez polnoc"
+                    "additional_costs_buy_gas": "Cena plynu pri nákupe"
                 },
                 "data_description": {
                     "additional_costs_buy_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` na získanie aktuálnej ceny, napríklad na pridanie 21 percent DPH použite `'{{ value * 1.21 }}`. Použite `hour` na výpočet ceny v danej hodine, ak sa sadzba v jednotlivých hodinách líši, napríklad pre vysoký a nízky tarif. Hodnota `hour` je v UTC. Ak potrebujete lokálny čas, použite `as_local(hour)`. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený.",
                     "additional_costs_sell_electricity": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` na získanie aktuálnej ceny, napríklad na odpočítanie fixného poplatku operátora vo výške 0.25 použite `'{{ value - 0.25 }}`. Použite `hour` na výpočet ceny v danej hodine, ak sa sadzba v jednotlivých hodinách líši, napríklad pre vysoký a nízky tarif. Hodnota `hour` je v UTC. Ak potrebujete lokálny čas, použite `as_local(hour)`. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený.",
-                    "additional_costs_buy_gas": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` na získanie aktuálnej ceny. Môžete použiť `day` v UTC pre spotové ceny. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený.",
-                    "cheapest_blocks": "Zoznam dĺžok blokov v hodinách oddelený čiarkami. Pre každú dĺžku sa vytvorí binárny senzor, ktorý bude zapnutý počas najlacnejších po sebe nasledujúcich hodín dňa.",
-                    "allow_cross_midnight": "Ak je povolené, bloky môžu presiahnuť polnoc (napr. 23:00-01:00). Keďže ceny sa poskytujú po dňoch, tieto bloky sa môžu po načítaní nových údajov zmeniť."
+                    "additional_costs_buy_gas": "Šablóna pre výpočet konečnej ceny po zahrnutí dodatočných nákladov. Použite `value` na získanie aktuálnej ceny. Môžete použiť `day` v UTC pre spotové ceny. Ak nezadáte žiadnu šablónu, senzor nebude vytvorený."
                 }
             }
         },
         "error": {
-            "invalid_format": "Neplatný formát, použite čísla oddelené čiarkami"
+            "invalid_template": "Neplatná šablóna",
+            "template_used_by_price_block": "Túto šablónu nemožno odstrániť, kým jej zdroj ceny používa vyhľadávanie cenového bloku"
+        }
+    },
+    "config_subentries": {
+        "price_block": {
+            "entry_type": "Binárny senzor aktívny počas vybraného cenového bloku",
+            "initiate_flow": {
+                "user": "Pridať vyhľadávanie cenového bloku",
+                "reconfigure": "Upraviť vyhľadávanie cenového bloku"
+            },
+            "step": {
+                "user": {
+                    "title": "Pridať vyhľadávanie cenového bloku",
+                    "description": "Vytvorí binárny senzor, ktorý sa zapne počas súvislého bloku s najnižšou alebo najvyššou cenou. Vyberte vyhľadávanie pre dnešok, zajtrajšok alebo konkrétne časové okno.",
+                    "menu_options": {"add_today": "Dnes", "add_tomorrow": "Zajtra", "add_fixed": "Časové okno"}
+                },
+                "add_today": {"title": "Pridať dnešné vyhľadávanie", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie"}},
+                "add_tomorrow": {"title": "Pridať zajtrajšie vyhľadávanie", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie"}},
+                "add_fixed": {"title": "Pridať vyhľadávanie v časovom okne", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie", "start_time": "Začiatok okna", "end_time": "Koniec okna"}},
+                "reconfigure": {"title": "Upraviť vyhľadávanie cenového bloku", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie", "type": "Obdobie vyhľadávania", "start_time": "Začiatok okna", "end_time": "Koniec okna"}}
+            },
+            "error": {
+                "required": "Povinné",
+                "duplicate_name": "Názov už existuje",
+                "invalid_number": "Neplatné číslo",
+                "must_be_positive": "Musí byť väčšie ako 0",
+                "start_equals_end": "Čas začiatku a konca nemôže byť rovnaký",
+                "longer_than_window": "Dĺžka bloku je dlhšia ako časové okno",
+                "incompatible_interval": "Dĺžka bloku musí zodpovedať nastavenému intervalu ceny",
+                "unsupported_price_type": "Tento typ ceny nie je nastavený"
+            },
+            "abort": {
+                "reconfigure_successful": "Vyhľadávanie cenového bloku bolo upravené",
+                "price_blocks_not_supported_for_gas": "Vyhľadávanie cenových blokov je dostupné iba pre služby elektriny. Cena plynu má jednu hodnotu za deň, takže súvislý cenový blok v rámci dňa nie je možné vypočítať."
+            }
         }
     },
     "entity": {
@@ -102,6 +160,42 @@
             },
             "sell_electricity_is_cheapest_hours_block_15min": {
                 "name": "Aktuálny blok {hours} hodín 15-minútových predajných cien elektriny je najlacnejší"
+            },
+            "spot_cheapest_block_search": {
+                "name": "Aktuálny spotový blok elektriny {name}"
+            },
+            "spot_cheapest_block_search_15min": {
+                "name": "Aktuálny 15-minútový spotový blok elektriny {name}"
+            },
+            "buy_cheapest_block_search": {
+                "name": "Aktuálny nákupný blok elektriny {name}"
+            },
+            "buy_cheapest_block_search_15min": {
+                "name": "Aktuálny 15-minútový nákupný blok elektriny {name}"
+            },
+            "sell_cheapest_block_search": {
+                "name": "Aktuálny predajný blok elektriny {name}"
+            },
+            "sell_cheapest_block_search_15min": {
+                "name": "Aktuálny 15-minútový predajný blok elektriny {name}"
+            },
+            "spot_highest_price_block_search": {
+                "name": "Aktuálny spotový blok elektriny s najvyššou cenou {name}"
+            },
+            "spot_highest_price_block_search_15min": {
+                "name": "Aktuálny 15-minútový spotový blok elektriny s najvyššou cenou {name}"
+            },
+            "buy_highest_price_block_search": {
+                "name": "Aktuálny nákupný blok elektriny s najvyššou cenou {name}"
+            },
+            "buy_highest_price_block_search_15min": {
+                "name": "Aktuálny 15-minútový nákupný blok elektriny s najvyššou cenou {name}"
+            },
+            "sell_highest_price_block_search": {
+                "name": "Aktuálny predajný blok elektriny s najvyššou cenou {name}"
+            },
+            "sell_highest_price_block_search_15min": {
+                "name": "Aktuálny 15-minútový predajný blok elektriny s najvyššou cenou {name}"
             }
         },
         "sensor": {

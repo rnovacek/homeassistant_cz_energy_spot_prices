@@ -1,24 +1,363 @@
 # pyright: reportUnusedParameter=false, reportMissingTypeStubs=false
-from datetime import datetime, timedelta
+import asyncio
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
+from types import MappingProxyType
 from typing import cast
-from unittest.mock import AsyncMock
-from homeassistant.core import HomeAssistant, State
+from unittest.mock import AsyncMock, patch
+from homeassistant.config_entries import ConfigSubentry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import slugify
 import pytest
 from freezegun import freeze_time
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
-from custom_components.cz_energy_spot_prices.const import SpotRateIntervalType
-from custom_components.cz_energy_spot_prices.coordinator import PRAGUE_TZ, Window
+from custom_components.cz_energy_spot_prices.const import (
+    CONF_PRICE_TYPE,
+    CONF_SEARCH_OBJECTIVE,
+    Commodity,
+    Currency,
+    DOMAIN,
+    EnergyUnit,
+    FX_COORDINATOR,
+    PRICE_BLOCK_SUBENTRY_TYPE,
+    SearchObjective,
+    SearchType,
+    SpotRateIntervalType,
+    SPOT_ELECTRICTY_COORDINATOR,
+)
+from custom_components.cz_energy_spot_prices.cheapest_blocks import (
+    PriceBlockSearch,
+    find_price_block,
+    resolve_search_window,
+)
+from custom_components.cz_energy_spot_prices.coordinator import (
+    EntryConfig,
+    IntervalSpotRateData,
+    PRAGUE_TZ,
+)
 
 from . import (
     BASE_DT,
-    CHEAPEST_15min_WINDOW,
-    approx,
     get_entry,
-    get_rate,
     init_integration,
 )
+
+
+def test_cross_midnight_time_window_resolves_current_overnight_window():
+    """Test time windows after midnight resolve to the window that began yesterday."""
+    search = PriceBlockSearch(
+        id="overnight",
+        name="Overnight",
+        type=SearchType.FIXED,
+        length_hours=1,
+        start_time=time(22),
+        end_time=time(6),
+    )
+    now = datetime(2025, 10, 22, 3, 0, tzinfo=PRAGUE_TZ)
+
+    window = resolve_search_window(search, now, available_end=None)
+
+    assert window == (
+        datetime(2025, 10, 21, 22, 0, tzinfo=PRAGUE_TZ),
+        datetime(2025, 10, 22, 6, 0, tzinfo=PRAGUE_TZ),
+    )
+
+
+@pytest.mark.parametrize("length_hours", [3, 6])
+def test_fixed_overnight_search_uses_previous_complete_window_until_publish(
+    length_hours: int,
+):
+    """A future partial window must not produce a provisional result."""
+    today = datetime(2025, 10, 22, 0, 0, tzinfo=PRAGUE_TZ)
+    rates = {
+        (today - timedelta(days=1) + timedelta(hours=hour)).astimezone(UTC): Decimal(
+            hour
+        )
+        for hour in range(48)
+    }
+    config = EntryConfig(
+        commodity=Commodity.Electricity,
+        interval=SpotRateIntervalType.Hour,
+        currency=Currency.EUR,
+        currency_human="EUR",
+        unit=EnergyUnit.MWh,
+        timezone="Europe/Prague",
+        zoneinfo=PRAGUE_TZ,
+        buy_template=None,
+        sell_template=None,
+        cheapest_block_searches=[
+            PriceBlockSearch(
+                id="overnight",
+                name="Overnight",
+                type=SearchType.FIXED,
+                length_hours=length_hours,
+                start_time=time(20),
+                end_time=time(6),
+            )
+        ],
+    )
+
+    with freeze_time(today + timedelta(hours=7)):
+        data = IntervalSpotRateData(config, rates, rate_template=None)
+
+    window = data.search_windows["overnight"]
+    assert window.start.astimezone(PRAGUE_TZ).date() == today.date() - timedelta(days=1)
+    assert window.end <= today.astimezone(UTC) + timedelta(hours=6)
+
+
+def test_fixed_overnight_search_switches_to_next_window_after_publish():
+    """A complete upcoming occurrence replaces the retained previous one."""
+    today = datetime(2025, 10, 22, 0, 0, tzinfo=PRAGUE_TZ)
+    search = PriceBlockSearch(
+        id="overnight",
+        name="Overnight",
+        type=SearchType.FIXED,
+        length_hours=1,
+        start_time=time(20),
+        end_time=time(6),
+    )
+
+    window = resolve_search_window(
+        search,
+        today + timedelta(hours=14),
+        available_start=today - timedelta(days=1),
+        available_end=today + timedelta(days=2),
+    )
+
+    assert window == (
+        today + timedelta(hours=20),
+        today + timedelta(days=1, hours=6),
+    )
+
+
+def test_tomorrow_search_can_use_final_available_interval():
+    """Test custom searches can select the last interval of available data."""
+    today = datetime(2025, 10, 22, 0, 0, tzinfo=PRAGUE_TZ)
+    tomorrow = datetime(2025, 10, 23, 0, 0, tzinfo=PRAGUE_TZ)
+    rates = {
+        (today + timedelta(hours=hour)).astimezone(UTC): Decimal(100)
+        for hour in range(24)
+    }
+    rates.update(
+        {
+            (tomorrow + timedelta(hours=hour)).astimezone(UTC): Decimal(100)
+            for hour in range(24)
+        }
+    )
+    last_interval = (tomorrow + timedelta(hours=23)).astimezone(UTC)
+    rates[last_interval] = Decimal(1)
+    config = EntryConfig(
+        commodity=Commodity.Electricity,
+        interval=SpotRateIntervalType.Hour,
+        currency=Currency.EUR,
+        currency_human="EUR",
+        unit=EnergyUnit.MWh,
+        timezone="Europe/Prague",
+        zoneinfo=PRAGUE_TZ,
+        buy_template=None,
+        sell_template=None,
+        cheapest_block_searches=[
+            PriceBlockSearch(
+                id="tomorrow-last-hour",
+                name="Tomorrow last hour",
+                type=SearchType.TOMORROW,
+                length_hours=1,
+            )
+        ],
+    )
+
+    with freeze_time(datetime(2025, 10, 22, 12, 0, tzinfo=PRAGUE_TZ)):
+        data = IntervalSpotRateData(config, rates, rate_template=None)
+
+    window = data.search_windows["tomorrow-last-hour"]
+    assert window.start == last_interval
+    assert window.end == last_interval + timedelta(hours=1)
+
+
+def test_interval_data_uses_highest_price_search_objective():
+    """Test configured highest objective reaches interval rate processing."""
+    today = datetime(2025, 10, 22, 0, 0, tzinfo=PRAGUE_TZ)
+    rates = {
+        (today + timedelta(hours=hour)).astimezone(UTC): Decimal(1)
+        for hour in range(24)
+    }
+    expected_start = (today + timedelta(hours=10)).astimezone(UTC)
+    rates[expected_start] = Decimal(10)
+    rates[expected_start + timedelta(hours=1)] = Decimal(9)
+    config = EntryConfig(
+        commodity=Commodity.Electricity,
+        interval=SpotRateIntervalType.Hour,
+        currency=Currency.EUR,
+        currency_human="EUR",
+        unit=EnergyUnit.MWh,
+        timezone="Europe/Prague",
+        zoneinfo=PRAGUE_TZ,
+        buy_template=None,
+        sell_template=None,
+        cheapest_block_searches=[
+            PriceBlockSearch(
+                id="today-highest",
+                name="Today highest",
+                type=SearchType.TODAY,
+                length_hours=2,
+                objective=SearchObjective.HIGHEST,
+            )
+        ],
+    )
+
+    with freeze_time(datetime(2025, 10, 22, 12, 0, tzinfo=PRAGUE_TZ)):
+        data = IntervalSpotRateData(config, rates, rate_template=None)
+
+    window = data.search_windows["today-highest"]
+    assert window.start == expected_start
+    assert window.end == expected_start + timedelta(hours=2)
+    assert window.prices == [Decimal(10), Decimal(9)]
+
+
+def test_highest_price_search_supports_tomorrow_and_fixed_windows():
+    """Test highest objective composes with tomorrow and fixed search periods."""
+    today = datetime(2025, 10, 22, 0, 0, tzinfo=PRAGUE_TZ)
+    rates = {
+        (today + timedelta(hours=hour)).astimezone(UTC): Decimal(1)
+        for hour in range(48)
+    }
+    fixed_start = (today + timedelta(hours=19)).astimezone(UTC)
+    rates[fixed_start] = Decimal(10)
+    rates[fixed_start + timedelta(hours=1)] = Decimal(9)
+    tomorrow_start = (today + timedelta(days=1, hours=8)).astimezone(UTC)
+    rates[tomorrow_start] = Decimal(12)
+    rates[tomorrow_start + timedelta(hours=1)] = Decimal(11)
+    config = EntryConfig(
+        commodity=Commodity.Electricity,
+        interval=SpotRateIntervalType.Hour,
+        currency=Currency.EUR,
+        currency_human="EUR",
+        unit=EnergyUnit.MWh,
+        timezone="Europe/Prague",
+        zoneinfo=PRAGUE_TZ,
+        buy_template=None,
+        sell_template=None,
+        cheapest_block_searches=[
+            PriceBlockSearch(
+                id="tomorrow-highest",
+                name="Tomorrow highest",
+                type=SearchType.TOMORROW,
+                length_hours=2,
+                objective=SearchObjective.HIGHEST,
+            ),
+            PriceBlockSearch(
+                id="fixed-highest",
+                name="Evening highest",
+                type=SearchType.FIXED,
+                length_hours=2,
+                start_time=time(18),
+                end_time=time(22),
+                objective=SearchObjective.HIGHEST,
+            ),
+        ],
+    )
+
+    with freeze_time(datetime(2025, 10, 22, 12, 0, tzinfo=PRAGUE_TZ)):
+        data = IntervalSpotRateData(config, rates, rate_template=None)
+
+    assert data.search_windows["tomorrow-highest"].start == tomorrow_start
+    assert data.search_windows["fixed-highest"].start == fixed_start
+
+
+def test_find_price_block_requires_interval_to_end_inside_window():
+    """Test partial intervals at a time window boundary are not selected."""
+    base = datetime(2025, 10, 22, 20, 0, tzinfo=UTC)
+    intervals = [
+        (base + timedelta(hours=2), Decimal(50)),
+        (base + timedelta(hours=3), Decimal(1)),
+    ]
+
+    result = find_price_block(
+        intervals,
+        base + timedelta(hours=2, minutes=30),
+        base + timedelta(hours=3, minutes=30),
+        length_hours=1,
+    )
+
+    assert result is None
+
+
+def test_find_price_block_handles_ties_and_negative_prices():
+    """Test price objectives handle ties and the negative prices common on OTE."""
+    base = datetime(2025, 10, 22, 0, 0, tzinfo=UTC)
+    intervals = [
+        (base + timedelta(hours=hour), price)
+        for hour, price in enumerate([Decimal(5), Decimal(5), Decimal(1), Decimal(9)])
+    ]
+
+    result = find_price_block(
+        intervals,
+        base,
+        base + timedelta(hours=4),
+        length_hours=2,
+        objective=SearchObjective.HIGHEST,
+    )
+
+    assert result is not None
+    assert result["start"] == base
+    assert result["end"] == base + timedelta(hours=2)
+    assert result["total"] == Decimal(10)
+
+    negative = [
+        (base + timedelta(hours=hour), price)
+        for hour, price in enumerate(
+            [Decimal(-5), Decimal(-5), Decimal(0), Decimal(-10)]
+        )
+    ]
+    result = find_price_block(
+        negative,
+        base,
+        base + timedelta(hours=4),
+        length_hours=2,
+        objective=SearchObjective.LOWEST,
+    )
+    assert result is not None
+    assert result["start"] == base
+    assert result["total"] == Decimal(-10)
+
+
+def test_custom_windows_resolve_across_both_dst_transitions():
+    """Test recurring windows use real elapsed intervals on short and long days."""
+    cases = (
+        (datetime(2026, 3, 29, 0, 30, tzinfo=PRAGUE_TZ), 2),
+        (datetime(2025, 10, 26, 0, 30, tzinfo=PRAGUE_TZ), 4),
+    )
+    search = PriceBlockSearch(
+        id="dst",
+        name="DST",
+        type=SearchType.FIXED,
+        length_hours=2,
+        start_time=time(1),
+        end_time=time(4),
+    )
+
+    for now, elapsed_hours in cases:
+        window = resolve_search_window(search, now, available_end=None)
+        assert window is not None
+        start, end = window
+        assert end.astimezone(UTC) - start.astimezone(UTC) == timedelta(
+            hours=elapsed_hours
+        )
+
+        intervals = [
+            (start.astimezone(UTC) + timedelta(hours=hour), Decimal(hour))
+            for hour in range(elapsed_hours)
+        ]
+        result = find_price_block(
+            intervals,
+            start.astimezone(UTC),
+            end.astimezone(UTC),
+            length_hours=2,
+        )
+        assert result is not None
+        assert result["end"] - result["start"] == timedelta(hours=2)
 
 
 @pytest.mark.asyncio
@@ -30,24 +369,20 @@ async def test_has_tomorrow_data_sensor(
     has_tomorrow = cast(str, mock_ote_electricity.param) != "today"
 
     now = BASE_DT
+    entries = [
+        get_entry(currency="CZK", unit="kWh", interval=SpotRateIntervalType.Hour),
+        get_entry(
+            currency="EUR",
+            unit="MWh",
+            interval=SpotRateIntervalType.QuarterHour,
+        ),
+    ]
     await hass.config.async_set_time_zone("Europe/Prague")
     with freeze_time(now):
         async_fire_time_changed(hass, now)
         await hass.async_block_till_done()
 
-        assert await init_integration(
-            hass,
-            [
-                get_entry(
-                    currency="CZK", unit="kWh", interval=SpotRateIntervalType.Hour
-                ),
-                get_entry(
-                    currency="EUR",
-                    unit="MWh",
-                    interval=SpotRateIntervalType.QuarterHour,
-                ),
-            ],
-        )
+        assert await init_integration(hass, entries)
 
         sensor = hass.states.get("binary_sensor.spot_electricity_has_tomorrow_data")
         assert sensor
@@ -61,20 +396,66 @@ async def test_has_tomorrow_data_sensor(
             sensor.attributes["friendly_name"] == "Spot Electricity has Tomorrow Data"
         )
 
+        registry = er.async_get(hass)
+        tomorrow_entries = [
+            item
+            for item in registry.entities.values()
+            if item.platform == DOMAIN
+            and item.unique_id == "spot_electricity_has_tomorrow_data"
+        ]
+        assert len(tomorrow_entries) == 1
+
 
 @pytest.mark.asyncio
-async def test_is_cheapest_sensors(
+async def test_search_based_cheapest_sensors(
     hass: HomeAssistant,
     mock_ote_electricity: AsyncMock,
     mock_cnb: AsyncMock,
-    windows_60min: dict[int, Window],
-    windows_15min: dict[int, Window],
 ):
-    now = BASE_DT
+    """Test search-based cheapest block sensors."""
     await hass.config.async_set_time_zone("Europe/Prague")
 
-    cheapest_blocks_config = "1,2,3,4,5,6,7,8,9,10,11,12"
-    cheapest_blocks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    searches_60min = [
+        {
+            "id": "today-1",
+            "name": "Today 1h",
+            "type": SearchType.TODAY,
+            "length_hours": 1,
+            CONF_PRICE_TYPE: "spot",
+        },
+        {
+            "id": "today-3",
+            "name": "Today 3h",
+            "type": SearchType.TODAY,
+            "length_hours": 3,
+            CONF_PRICE_TYPE: "buy",
+        },
+        {
+            "id": "today-high-2",
+            "name": "Today high 2h",
+            "type": SearchType.TODAY,
+            "length_hours": 2,
+            CONF_PRICE_TYPE: "spot",
+            CONF_SEARCH_OBJECTIVE: SearchObjective.HIGHEST,
+        },
+    ]
+    searches_15min = [
+        {
+            "id": "today-1",
+            "name": "Today 1h",
+            "type": SearchType.TODAY,
+            "length_hours": 1,
+            CONF_PRICE_TYPE: "spot",
+        },
+        {
+            "id": "today-3",
+            "name": "Today 3h",
+            "type": SearchType.TODAY,
+            "length_hours": 3,
+            CONF_PRICE_TYPE: "sell",
+        },
+    ]
+
     with freeze_time(BASE_DT):
         async_fire_time_changed(hass, BASE_DT)
         assert await init_integration(
@@ -84,401 +465,873 @@ async def test_is_cheapest_sensors(
                     currency="CZK",
                     unit="kWh",
                     interval=SpotRateIntervalType.Hour,
-                    cheapest_blocks=cheapest_blocks_config,
-                    allow_cross_midnight=False,
+                    cheapest_block_searches=searches_60min,
                 ),
                 get_entry(
                     currency="EUR",
                     unit="MWh",
                     interval=SpotRateIntervalType.QuarterHour,
-                    cheapest_blocks=cheapest_blocks_config,
-                    allow_cross_midnight=True,
+                    cheapest_block_searches=searches_15min,
                 ),
             ],
         )
 
-    rate_60min = get_rate("CZK", "kWh")
-    rate_15min = get_rate("EUR", "MWh")
+    sensor = hass.states.get("binary_sensor.spot_cheapest_block_today_1h")
+    assert sensor is not None
+    assert "Start" in sensor.attributes
+    assert "End" in sensor.attributes
+    assert "Min" in sensor.attributes
+    assert "Max" in sensor.attributes
+    assert "Mean" in sensor.attributes
+    assert sensor.attributes["Price type"] == "spot"
+    assert sensor.attributes["Objective"] == SearchObjective.LOWEST
 
-    dt = now
-    end = BASE_DT + timedelta(days=1)
-    while dt < end:
-        with freeze_time(dt):
-            async_fire_time_changed(hass, dt)
+    highest_sensor = hass.states.get(
+        "binary_sensor.spot_highest_price_block_today_high_2h"
+    )
+    assert highest_sensor is not None
+    assert highest_sensor.attributes["Objective"] == SearchObjective.HIGHEST
 
-            for trade in ("spot", "buy", "sell"):
-                if trade == "spot":
-                    trade_name = "Spot"
-                    offset = 0
-                elif trade == "buy":
-                    trade_name = "Buy"
-                    offset = 10
-                elif trade == "sell":
-                    trade_name = "Sell"
-                    offset = -1
-                else:
-                    raise ValueError(f"Invalid trade: {trade}")
+    sensor = hass.states.get("binary_sensor.buy_cheapest_block_today_3h")
+    assert sensor is not None
+    assert sensor.attributes["Price type"] == "buy"
 
-                sensor = hass.states.get(
-                    f"binary_sensor.{trade}_electricity_is_cheapest"
-                )
-                check_cheapest_sensor(
-                    sensor,
-                    f"Current {trade_name} Electricity is Cheapest",
-                    dt,
-                    windows_60min[1],
-                    rate_60min,
-                    offset,
-                )
+    sensor_15min = hass.states.get("binary_sensor.spot_cheapest_block_today_1h_15min")
+    assert sensor_15min is not None
 
-                sensor = hass.states.get(
-                    f"binary_sensor.{trade}_electricity_is_cheapest_15min"
-                )
-                check_cheapest_sensor(
-                    sensor,
-                    f"Current 15min {trade_name} Electricity is Cheapest",
-                    dt,
-                    CHEAPEST_15min_WINDOW,
-                    rate_15min,
-                    offset,
-                )
+    sensor_15min = hass.states.get("binary_sensor.sell_cheapest_block_today_3h_15min")
+    assert sensor_15min is not None
+    assert sensor_15min.attributes["Price type"] == "sell"
 
-                for block in cheapest_blocks:
-                    if block > 1:
-                        # 1-hour block is the same as {trade}_electricity_is_cheapest - it's not duplicated
-                        entity_id = f"binary_sensor.{trade}_electricity_is_cheapest_{block}_hours_block"
-                        sensor = hass.states.get(entity_id)
-                        friendly_name = f"Current {trade_name} Electricity is Cheapest {block} Hours Block"
-                        check_cheapest_sensor(
-                            sensor,
-                            friendly_name,
-                            dt,
-                            windows_60min[block],
-                            rate_60min,
-                            offset,
-                        )
+    assert hass.states.get("binary_sensor.buy_cheapest_block_today_1h") is None
+    assert hass.states.get("binary_sensor.sell_cheapest_block_today_1h") is None
+    assert hass.states.get("sensor.spot_cheapest_block_today_1h") is None
+    assert (
+        hass.states.get("binary_sensor.buy_electricity_is_cheapest_3_hours_block")
+        is None
+    )
 
-                    entity_id = f"binary_sensor.{trade}_electricity_is_cheapest_{block}_hours_block_15min"
-                    friendly_name = f"Current 15min {trade_name} Electricity is Cheapest {block} Hours Block"
-                    sensor = hass.states.get(entity_id)
-                    check_cheapest_sensor(
-                        sensor,
-                        friendly_name,
-                        dt,
-                        windows_15min[block],
-                        rate_15min,
-                        offset,
-                    )
+    # Verify sensor state at a specific time
+    # Today cheapest 1h is at 13:00-14:00 Prague time = 11:00-12:00 UTC
+    cheapest_1h_start = BASE_DT + timedelta(hours=13)
+    with freeze_time(cheapest_1h_start + timedelta(minutes=30)):
+        async_fire_time_changed(hass, cheapest_1h_start + timedelta(minutes=30))
+        sensor = hass.states.get("binary_sensor.spot_cheapest_block_today_1h")
+        assert sensor is not None
+        assert sensor.state == "on"
+        assert sensor.attributes["Start hour"] == 13
+        assert sensor.attributes["End hour"] == 14
 
-        dt += timedelta(minutes=15)
+    # Verify sensor attributes are correct
+    sensor = hass.states.get("binary_sensor.spot_cheapest_block_today_1h")
+    assert sensor is not None
+    assert sensor.attributes["Length hours"] == 1.0
+    assert sensor.attributes["Search type"] == "today"
 
 
-def check_cheapest_sensor(
-    sensor: State | None,
-    friendly_name: str,
-    dt: datetime,
-    window: Window,
-    rate: float,
-    offset: float,
+@pytest.mark.asyncio
+async def test_highest_price_15min_entities_support_all_price_types(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
 ):
-    assert sensor
-    assert sensor.attributes["friendly_name"] == friendly_name
-
-    assert sensor.state == "on" if window.start <= dt < window.end else "off"
-    attr = sensor.attributes
-    start = window.start.astimezone(PRAGUE_TZ)
-    end = window.end.astimezone(PRAGUE_TZ)
-    assert attr["Start"] == start
-    assert attr["End"] == end
-    if "15min" in friendly_name:
-        assert "Start hour" not in attr
-        assert "End hour" not in attr
-    else:
-        assert attr["Start hour"] == start.hour
-        assert attr["End hour"] == end.hour
-    prices = [(float(price) * rate + offset) for price in window.prices]
-    assert approx(cast(str, attr["Min"])) == round(min(prices), 4)
-    assert approx(cast(str, attr["Max"])) == round(max(prices), 4)
-    assert approx(cast(str, attr["Mean"])) == round(sum(prices) / len(prices), 4)
-    assert sensor.attributes["icon"] == "mdi:cash-clock"
-
-
-@pytest.fixture
-def windows_60min():
-    hourly_prices = [
-        Decimal(92.42),  # 0
-        Decimal(92.04),  # 1
-        Decimal(91.57),  # 2
-        Decimal(92.72),  # 3
-        Decimal(92.57),  # 4
-        Decimal(93.64),  # 5
-        Decimal(112.83),  # 6
-        Decimal(129.89),  # 7
-        Decimal(130.37),  # 8
-        Decimal(125.9),  # 9
-        Decimal(105.42),  # 10
-        Decimal(90.41),  # 11
-        Decimal(86.16),  # 12
-        Decimal(85.05),  # 13
-        Decimal(92.98),  # 14
-        Decimal(113.66),  # 15
-        Decimal(147.49),  # 16
-        Decimal(203.85),  # 17
-        Decimal(293.73),  # 18
-        Decimal(274.02),  # 19
-        Decimal(185.28),  # 20
-        Decimal(137.43),  # 21
-        Decimal(125.98),  # 22
-        Decimal(111.72),  # 23
+    """Test 15-minute highest searches for spot, buy, and sell prices."""
+    searches = [
+        {
+            "id": f"highest-{price_type}",
+            "name": f"Highest {price_type}",
+            "type": SearchType.TODAY,
+            "length_hours": 0.5,
+            CONF_PRICE_TYPE: price_type,
+            CONF_SEARCH_OBJECTIVE: SearchObjective.HIGHEST,
+        }
+        for price_type in ("spot", "buy", "sell")
     ]
 
-    # Get start of the cheapest window by its size
-    cheapest_start_by_size = {
-        1: 13,
-        2: 12,
-        3: 11,
-        4: 11,
-        5: 10,
-        6: 0,
-        7: 0,
-        8: 0,
-        9: 0,
-        10: 4,
-        11: 3,
-        12: 2,
-    }
-
-    window_by_size: dict[int, Window] = {}
-    for size, start in cheapest_start_by_size.items():
-        window_by_size[size] = Window(
-            start=BASE_DT + timedelta(hours=start),
-            end=BASE_DT + timedelta(hours=start + size),
-            prices=hourly_prices[start : start + size],
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [
+                get_entry(
+                    currency="EUR",
+                    unit="MWh",
+                    interval=SpotRateIntervalType.QuarterHour,
+                    cheapest_block_searches=searches,
+                )
+            ],
         )
 
-    return window_by_size
+    sensors = {
+        price_type: hass.states.get(
+            f"binary_sensor.{price_type}_highest_price_block_highest_{price_type}_15min"
+        )
+        for price_type in ("spot", "buy", "sell")
+    }
+    assert all(sensor is not None for sensor in sensors.values())
+
+    spot = sensors["spot"]
+    buy = sensors["buy"]
+    sell = sensors["sell"]
+    assert spot is not None and buy is not None and sell is not None
+    for price_type, sensor in sensors.items():
+        assert sensor is not None
+        assert sensor.attributes["Objective"] == SearchObjective.HIGHEST
+        assert sensor.attributes["Price type"] == price_type
+        assert "Highest Price Block" in sensor.attributes["friendly_name"]
+
+    assert buy.attributes["Start"] == spot.attributes["Start"]
+    assert sell.attributes["Start"] == spot.attributes["Start"]
+    assert buy.attributes["Mean"] == pytest.approx(spot.attributes["Mean"] + 10)
+    assert sell.attributes["Mean"] == pytest.approx(spot.attributes["Mean"] - 1)
 
 
-@pytest.fixture
-def windows_15min():
-    interval_prices = [
-        Decimal(99.54),
-        Decimal(96.27),
-        Decimal(87.66),
-        Decimal(86.19),
-        Decimal(95.43),
-        Decimal(93.53),
-        Decimal(91.64),
-        Decimal(87.57),
-        Decimal(92.04),
-        Decimal(91.41),
-        Decimal(91.78),
-        Decimal(91.06),
-        Decimal(92.23),
-        Decimal(93.73),
-        Decimal(94.13),
-        Decimal(90.78),
-        Decimal(88.15),
-        Decimal(90.78),
-        Decimal(95.36),
-        Decimal(96.00),
-        Decimal(85.49),
-        Decimal(89.49),
-        Decimal(96.71),
-        Decimal(102.88),
-        Decimal(96.47),
-        Decimal(106.00),
-        Decimal(112.86),
-        Decimal(136.00),
-        Decimal(110.89),
-        Decimal(126.99),
-        Decimal(142.85),
-        Decimal(138.84),
-        Decimal(133.81),
-        Decimal(141.31),
-        Decimal(135.13),
-        Decimal(111.24),
-        Decimal(148.00),
-        Decimal(138.69),
-        Decimal(115.64),
-        Decimal(101.26),
-        Decimal(130.54),
-        Decimal(105.46),
-        Decimal(95.87),
-        Decimal(89.81),
-        Decimal(97.63),
-        Decimal(94.11),
-        Decimal(88.66),
-        Decimal(81.25),
-        Decimal(93.51),
-        Decimal(83.15),
-        Decimal(83.65),
-        Decimal(84.31),
-        Decimal(91.89),
-        Decimal(86.48),
-        Decimal(83.11),
-        Decimal(78.73),
-        Decimal(80.42),
-        Decimal(91.47),
-        Decimal(95.08),
-        Decimal(104.96),
-        Decimal(90.24),
-        Decimal(99.73),
-        Decimal(125.26),
-        Decimal(139.4),
-        Decimal(94.88),
-        Decimal(127.43),
-        Decimal(160.11),
-        Decimal(207.52),
-        Decimal(145.5),
-        Decimal(167.00),
-        Decimal(224.65),
-        Decimal(278.24),
-        Decimal(224.66),
-        Decimal(270.09),
-        Decimal(334.57),
-        Decimal(345.58),
-        Decimal(324.05),
-        Decimal(299.18),
-        Decimal(254.23),
-        Decimal(218.61),
-        Decimal(259.64),
-        Decimal(194.85),
-        Decimal(150.21),
-        Decimal(136.41),
-        Decimal(180.73),
-        Decimal(142.85),
-        Decimal(120.74),
-        Decimal(105.4),
-        Decimal(145.83),
-        Decimal(131.16),
-        Decimal(117.09),
-        Decimal(109.84),
-        Decimal(117.79),
-        Decimal(115.12),
-        Decimal(111.07),
-        Decimal(102.88),
-        Decimal(114.14),
-        Decimal(108.5),
-        Decimal(100.63),
-        Decimal(96.78),
-        Decimal(110.81),
-        Decimal(108.52),
-        Decimal(98.78),
-        Decimal(94.73),
-        Decimal(109.68),
-        Decimal(101.48),
-        Decimal(93.04),
-        Decimal(89.63),
-        Decimal(97.49),
-        Decimal(91.16),
-        Decimal(82.89),
-        Decimal(78.15),
-        Decimal(84.18),
-        Decimal(81.75),
-        Decimal(81.22),
-        Decimal(84.3),
-        Decimal(84.88),
-        Decimal(83.02),
-        Decimal(98.04),
-        Decimal(107.43),
-        Decimal(101.68),
-        Decimal(113.69),
-        Decimal(120.11),
-        Decimal(129.83),
-        Decimal(116.41),
-        Decimal(135.93),
-        Decimal(130.93),
-        Decimal(123.19),
-        Decimal(140.67),
-        Decimal(133.45),
-        Decimal(109.75),
-        Decimal(100.02),
-        Decimal(119.78),
-        Decimal(111.98),
-        Decimal(103.15),
-        Decimal(86.62),
-        Decimal(107.71),
-        Decimal(88.22),
-        Decimal(75.84),
-        Decimal(69.04),
-        Decimal(72.44),
-        Decimal(73.2),
-        Decimal(71.08),
-        Decimal(69.44),
-        Decimal(70.87),
-        Decimal(68.99),
-        Decimal(68.42),
-        Decimal(66.93),
-        Decimal(68.96),
-        Decimal(66.93),
-        Decimal(66.48),
-        Decimal(65.83),
-        Decimal(61.55),
-        Decimal(65.99),
-        Decimal(84.43),
-        Decimal(90.22),
-        Decimal(67.61),
-        Decimal(90.77),
-        Decimal(99.41),
-        Decimal(111.49),
-        Decimal(92.73),
-        Decimal(102.28),
-        Decimal(113.26),
-        Decimal(118.37),
-        Decimal(96.03),
-        Decimal(114.56),
-        Decimal(121.51),
-        Decimal(127.55),
-        Decimal(110.46),
-        Decimal(114.99),
-        Decimal(129.23),
-        Decimal(120.5),
-        Decimal(132.91),
-        Decimal(122.46),
-        Decimal(112.21),
-        Decimal(98.64),
-        Decimal(115.85),
-        Decimal(110.3),
-        Decimal(100.19),
-        Decimal(93.65),
-        Decimal(105.1),
-        Decimal(93.81),
-        Decimal(85.43),
-        Decimal(73.72),
-        Decimal(105.17),
-        Decimal(89.00),
-        Decimal(74.39),
-        Decimal(62.43),
-        Decimal(79.42),
-        Decimal(72.43),
-        Decimal(69.75),
-        Decimal(61.36),
+@pytest.mark.asyncio
+async def test_invalid_search_objective_falls_back_to_lowest(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test corrupt stored objectives remain usable as lowest-price searches."""
+    await hass.config.async_set_time_zone("Europe/Prague")
+    search = {
+        "id": "invalid-objective",
+        "name": "Invalid objective",
+        "type": SearchType.TODAY,
+        "length_hours": 1,
+        CONF_PRICE_TYPE: "spot",
+        CONF_SEARCH_OBJECTIVE: "invalid",
+    }
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [
+                get_entry(
+                    interval=SpotRateIntervalType.Hour,
+                    cheapest_block_searches=[search],
+                )
+            ],
+        )
+
+    sensor = hass.states.get("binary_sensor.spot_cheapest_block_invalid_objective")
+    assert sensor is not None
+    assert sensor.attributes["Objective"] == SearchObjective.LOWEST
+    assert sensor.attributes["Mean"] == pytest.approx(85.05)
+
+
+@pytest.mark.asyncio
+async def test_legacy_cheapest_block_entities_are_preserved_after_migration(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test legacy cheapest block config still creates old entity IDs."""
+    entry = get_entry(
+        currency="EUR",
+        unit="MWh",
+        interval=SpotRateIntervalType.Hour,
+        cheapest_blocks="2, 3",
+    )
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(hass, [entry])
+
+    assert hass.states.get("binary_sensor.spot_electricity_is_cheapest") is not None
+    assert hass.states.get("binary_sensor.buy_electricity_is_cheapest") is not None
+    assert hass.states.get("binary_sensor.sell_electricity_is_cheapest") is not None
+    assert (
+        hass.states.get("binary_sensor.spot_electricity_is_cheapest_2_hours_block")
+        is not None
+    )
+    assert (
+        hass.states.get("binary_sensor.buy_electricity_is_cheapest_2_hours_block")
+        is not None
+    )
+    assert (
+        hass.states.get("binary_sensor.sell_electricity_is_cheapest_2_hours_block")
+        is not None
+    )
+    assert (
+        hass.states.get("binary_sensor.spot_electricity_is_cheapest_3_hours_block")
+        is not None
+    )
+    assert hass.states.get("binary_sensor.spot_cheapest_block_today_2h") is not None
+    assert hass.states.get("binary_sensor.spot_cheapest_block_tomorrow_2h") is not None
+
+    ent_reg = er.async_get(hass)
+    registry_entry = ent_reg.async_get(
+        "binary_sensor.spot_electricity_is_cheapest_2_hours_block"
+    )
+    assert registry_entry is not None
+    assert (
+        registry_entry.unique_id
+        == f"{entry.entry_id}_spot_electricity_is_cheapest_2_hours_block"
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_entity_survives_one_sibling_and_is_removed_after_both(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Two migrated searches jointly keep one released compatibility entity."""
+    entry = get_entry(
+        currency="EUR",
+        interval=SpotRateIntervalType.Hour,
+        cheapest_blocks="3",
+    )
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(hass, [entry])
+
+    ent_reg = er.async_get(hass)
+    unique_id = f"{entry.entry_id}_spot_electricity_is_cheapest_3_hours_block"
+    entity_id = ent_reg.async_get_entity_id("binary_sensor", DOMAIN, unique_id)
+    assert entity_id is not None
+    ent_reg.async_update_entity(entity_id, name="My retained block")
+
+    searches = list(entry.subentries.values())
+    today_search = next(
+        search for search in searches if search.data["type"] == SearchType.TODAY
+    )
+    tomorrow_search = next(
+        search for search in searches if search.data["type"] == SearchType.TOMORROW
+    )
+
+    assert hass.config_entries.async_remove_subentry(entry, today_search.subentry_id)
+    await hass.async_block_till_done()
+    retained = ent_reg.async_get(entity_id)
+    assert retained is not None
+    assert retained.name == "My retained block"
+    assert hass.states.get(entity_id) is not None
+
+    assert hass.config_entries.async_remove_subentry(entry, tomorrow_search.subentry_id)
+    await hass.async_block_till_done()
+    assert ent_reg.async_get(entity_id) is None
+
+
+@pytest.mark.asyncio
+async def test_only_stale_released_legacy_block_sensors_are_removed(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Cleanup targets released legacy IDs, not unreleased search IDs."""
+    search = {
+        "id": "today-1",
+        "name": "Today 1h",
+        "type": SearchType.TODAY,
+        "length_hours": 1,
+        CONF_PRICE_TYPE: "buy",
+    }
+    entry = get_entry(
+        currency="CZK",
+        unit="kWh",
+        interval=SpotRateIntervalType.Hour,
+        cheapest_block_searches=[search],
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    stale_entry = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_spot_cheapest_block_today-1",
+        suggested_object_id="spot_cheapest_block_today_1h",
+        config_entry=entry,
+    )
+    stale_price_entry = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_spot_cheapest_block_price_today-1",
+        suggested_object_id="spot_cheapest_block_today_1h",
+        config_entry=entry,
+    )
+    current_entry = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_price_block_search_today-1",
+        suggested_object_id="buy_cheapest_block_today_1h",
+        config_entry=entry,
+    )
+    stale_legacy_entry = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_spot_electricity_is_cheapest_3_hours_block",
+        suggested_object_id="spot_electricity_is_cheapest_3_hours_block",
+        config_entry=entry,
+    )
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert ent_reg.async_get(stale_entry.entity_id) is not None
+    assert ent_reg.async_get(stale_price_entry.entity_id) is not None
+    assert ent_reg.async_get(stale_legacy_entry.entity_id) is None
+    assert ent_reg.async_get(current_entry.entity_id) is not None
+    assert hass.states.get(current_entry.entity_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_time_window_search_finds_cheapest_block_inside_window(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test a custom time window search chooses the cheapest block in that window."""
+    await hass.config.async_set_time_zone("Europe/Prague")
+    search = {
+        "id": "ev-window",
+        "name": "EV window",
+        "type": SearchType.FIXED,
+        "length_hours": 1,
+        "start_time": "12:00",
+        "end_time": "16:00",
+        CONF_PRICE_TYPE: "spot",
+    }
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [
+                get_entry(
+                    currency="EUR",
+                    unit="MWh",
+                    interval=SpotRateIntervalType.Hour,
+                    cheapest_block_searches=[search],
+                ),
+            ],
+        )
+
+    sensor = hass.states.get("binary_sensor.spot_cheapest_block_ev_window")
+    assert sensor is not None
+    assert sensor.state == "off"
+    assert sensor.attributes["Search type"] == SearchType.FIXED
+    assert sensor.attributes["Start"] == datetime(2025, 10, 22, 13, 0, tzinfo=PRAGUE_TZ)
+    assert sensor.attributes["End"] == datetime(2025, 10, 22, 14, 0, tzinfo=PRAGUE_TZ)
+
+    active_time = datetime(2025, 10, 22, 13, 30, tzinfo=PRAGUE_TZ)
+    with freeze_time(active_time):
+        async_fire_time_changed(hass, active_time)
+        await hass.async_block_till_done()
+
+    sensor = hass.states.get("binary_sensor.spot_cheapest_block_ev_window")
+    assert sensor is not None
+    assert sensor.state == "on"
+
+    for boundary, expected_state in (
+        (datetime(2025, 10, 22, 13, 0, tzinfo=PRAGUE_TZ), "on"),
+        (datetime(2025, 10, 22, 14, 0, tzinfo=PRAGUE_TZ), "off"),
+    ):
+        with freeze_time(boundary):
+            async_fire_time_changed(hass, boundary)
+            await hass.async_block_till_done()
+        sensor = hass.states.get("binary_sensor.spot_cheapest_block_ev_window")
+        assert sensor is not None
+        assert sensor.state == expected_state
+
+
+@pytest.mark.asyncio
+async def test_cross_midnight_time_window_search_can_be_active(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test custom time windows can search and activate across midnight."""
+    await hass.config.async_set_time_zone("Europe/Prague")
+    search = {
+        "id": "overnight",
+        "name": "Overnight",
+        "type": SearchType.FIXED,
+        "length_hours": 2,
+        "start_time": "22:00",
+        "end_time": "06:00",
+        CONF_PRICE_TYPE: "spot",
+    }
+
+    current_time = datetime(2025, 10, 21, 22, 30, tzinfo=PRAGUE_TZ)
+    with freeze_time(current_time):
+        async_fire_time_changed(hass, current_time)
+        assert await init_integration(
+            hass,
+            [
+                get_entry(
+                    currency="EUR",
+                    unit="MWh",
+                    interval=SpotRateIntervalType.Hour,
+                    cheapest_block_searches=[search],
+                ),
+            ],
+        )
+
+    sensor = hass.states.get("binary_sensor.spot_cheapest_block_overnight")
+    assert sensor is not None
+    start = cast(datetime, sensor.attributes["Start"])
+    end = cast(datetime, sensor.attributes["End"])
+    assert start < end
+    assert start.date() < end.date()
+    assert start.hour >= 22
+    assert end.hour <= 6
+    assert sensor.state == "on"
+
+
+@pytest.mark.asyncio
+async def test_tomorrow_search_is_plan_only_off_with_attributes(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test tomorrow searches expose the plan while staying off today."""
+    await hass.config.async_set_time_zone("Europe/Prague")
+    search = {
+        "id": "tomorrow-plan",
+        "name": "Tomorrow plan",
+        "type": SearchType.TOMORROW,
+        "length_hours": 3,
+        CONF_PRICE_TYPE: "spot",
+    }
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [
+                get_entry(
+                    currency="EUR",
+                    unit="MWh",
+                    interval=SpotRateIntervalType.Hour,
+                    cheapest_block_searches=[search],
+                ),
+            ],
+        )
+
+    sensor = hass.states.get("binary_sensor.spot_cheapest_block_tomorrow_plan")
+    assert sensor is not None
+    assert sensor.state == "off"
+    assert sensor.attributes["Search type"] == SearchType.TOMORROW
+    assert (
+        sensor.attributes["Start"].date()
+        == datetime(2025, 10, 23, tzinfo=PRAGUE_TZ).date()
+    )
+    assert sensor.attributes["End"] > sensor.attributes["Start"]
+    assert "Min" in sensor.attributes
+    assert "Max" in sensor.attributes
+    assert "Mean" in sensor.attributes
+
+
+@pytest.mark.asyncio
+async def test_changing_search_price_type_preserves_entity_identity(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test changing price type does not replace the search entity."""
+    search = {
+        "id": "ev",
+        "name": "EV",
+        "type": SearchType.TODAY,
+        "length_hours": 2,
+        CONF_PRICE_TYPE: "buy",
+    }
+    entry = get_entry(
+        currency="EUR",
+        unit="MWh",
+        interval=SpotRateIntervalType.Hour,
+        cheapest_block_searches=[search],
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    existing_entry = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_price_block_search_ev",
+        suggested_object_id="spot_cheapest_block_ev",
+        config_entry=entry,
+    )
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    registry_entry = ent_reg.async_get(existing_entry.entity_id)
+    assert registry_entry is not None
+    assert registry_entry.unique_id == existing_entry.unique_id
+    assert hass.states.get(existing_entry.entity_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_changing_search_objective_preserves_entity_identity(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test changing objective does not replace the search entity."""
+    search = {
+        "id": "export",
+        "name": "Export",
+        "type": SearchType.TODAY,
+        "length_hours": 2,
+        CONF_PRICE_TYPE: "spot",
+        CONF_SEARCH_OBJECTIVE: SearchObjective.HIGHEST,
+    }
+    entry = get_entry(
+        currency="EUR",
+        unit="MWh",
+        interval=SpotRateIntervalType.Hour,
+        cheapest_block_searches=[search],
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    existing_entry = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_price_block_search_export",
+        suggested_object_id="spot_cheapest_block_export",
+        config_entry=entry,
+    )
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    registry_entry = ent_reg.async_get(existing_entry.entity_id)
+    assert registry_entry is not None
+    assert registry_entry.unique_id == existing_entry.unique_id
+    assert hass.states.get(existing_entry.entity_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_search_name_with_spaces_and_punctuation_has_stable_entity(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test custom block names with common punctuation still create an entity."""
+    search_name = "Boiler: Noční/EV"
+    search = {
+        "id": "night-ev-pump",
+        "name": search_name,
+        "type": SearchType.TODAY,
+        "length_hours": 1,
+        CONF_PRICE_TYPE: "spot",
+    }
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [
+                get_entry(
+                    currency="EUR",
+                    unit="MWh",
+                    interval=SpotRateIntervalType.Hour,
+                    cheapest_block_searches=[search],
+                ),
+            ],
+        )
+
+    ent_reg = er.async_get(hass)
+    registry_entries = [
+        entry
+        for entry in er.async_entries_for_config_entry(
+            ent_reg, hass.config_entries.async_entries(DOMAIN)[0].entry_id
+        )
+        if entry.unique_id.endswith("_price_block_search_night-ev-pump")
+    ]
+    assert len(registry_entries) == 1
+    assert registry_entries[0].entity_id == (
+        f"binary_sensor.spot_cheapest_block_{slugify(search_name)}"
+    )
+    sensor = hass.states.get(registry_entries[0].entity_id)
+    assert sensor is not None
+
+
+@pytest.mark.asyncio
+async def test_new_subentry_activates_without_manual_reload(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Adding a price-block subentry reloads its parent and creates the sensor."""
+    entry = get_entry(currency="CZK", cheapest_block_searches=[])
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(hass, [entry])
+
+        spot_coordinator = hass.data[DOMAIN][SPOT_ELECTRICTY_COORDINATOR]
+        fx_coordinator = hass.data[DOMAIN][FX_COORDINATOR]
+        ote_calls = mock_ote_electricity.call_count
+        cnb_calls = mock_cnb.call_count
+
+        search = {
+            "id": "added-after-setup",
+            "name": "Added after setup",
+            "type": SearchType.TODAY,
+            "length_hours": 1,
+            CONF_PRICE_TYPE: "spot",
+            CONF_SEARCH_OBJECTIVE: SearchObjective.LOWEST,
+        }
+        assert hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data=MappingProxyType(search),
+                subentry_type=PRICE_BLOCK_SUBENTRY_TYPE,
+                title=str(search["name"]),
+                unique_id=str(search["id"]),
+            ),
+        )
+        await hass.async_block_till_done()
+
+    assert hass.data[DOMAIN][SPOT_ELECTRICTY_COORDINATOR] is spot_coordinator
+    assert hass.data[DOMAIN][FX_COORDINATOR] is fx_coordinator
+    assert mock_ote_electricity.call_count == ote_calls
+    assert mock_cnb.call_count == cnb_calls
+
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_price_block_search_added-after-setup",
+    )
+    assert entity_id is not None
+    assert hass.states.get(entity_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_quick_subentry_updates_serialize_platform_reload(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Concurrent HA update-listener tasks must not unload twice at once."""
+    entry = get_entry(currency="CZK", cheapest_block_searches=[])
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(hass, [entry])
+
+        original_unload = hass.config_entries.async_unload_platforms
+        first_unload_started = asyncio.Event()
+        allow_first_unload = asyncio.Event()
+        active_unloads = 0
+        max_active_unloads = 0
+        unload_calls = 0
+
+        async def tracked_unload(config_entry, platforms):
+            nonlocal active_unloads, max_active_unloads, unload_calls
+            unload_calls += 1
+            active_unloads += 1
+            max_active_unloads = max(max_active_unloads, active_unloads)
+            try:
+                if unload_calls == 1:
+                    first_unload_started.set()
+                    await allow_first_unload.wait()
+                return await original_unload(config_entry, platforms)
+            finally:
+                active_unloads -= 1
+
+        def add_search(search_id: str) -> None:
+            search = {
+                "id": search_id,
+                "name": search_id,
+                "type": SearchType.TODAY,
+                "length_hours": 1,
+                CONF_PRICE_TYPE: "spot",
+            }
+            assert hass.config_entries.async_add_subentry(
+                entry,
+                ConfigSubentry(
+                    data=MappingProxyType(search),
+                    subentry_type=PRICE_BLOCK_SUBENTRY_TYPE,
+                    title=search_id,
+                    unique_id=search_id,
+                ),
+            )
+
+        ote_calls = mock_ote_electricity.call_count
+        cnb_calls = mock_cnb.call_count
+        with patch.object(
+            hass.config_entries,
+            "async_unload_platforms",
+            side_effect=tracked_unload,
+        ):
+            add_search("first")
+            await first_unload_started.wait()
+            add_search("second")
+            await asyncio.sleep(0)
+            allow_first_unload.set()
+            await hass.async_block_till_done()
+
+    assert max_active_unloads == 1
+    assert unload_calls == 2
+    assert mock_ote_electricity.call_count == ote_calls
+    assert mock_cnb.call_count == cnb_calls
+    ent_reg = er.async_get(hass)
+    for search_id in ("first", "second"):
+        entity_id = ent_reg.async_get_entity_id(
+            "binary_sensor",
+            DOMAIN,
+            f"{entry.entry_id}_price_block_search_{search_id}",
+        )
+        assert entity_id is not None
+        assert hass.states.get(entity_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_custom_entity_lifecycle_is_stable_and_scoped_per_entry(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test safe edits preserve identity and cleanup never crosses entry boundaries."""
+    search = {
+        "id": "shared",
+        "name": "Shared schedule",
+        "type": SearchType.TODAY,
+        "length_hours": 1,
+        CONF_PRICE_TYPE: "spot",
+    }
+    entries = [
+        get_entry(
+            interval=SpotRateIntervalType.Hour,
+            cheapest_block_searches=[dict(search)],
+        )
+        for _ in range(2)
     ]
 
-    # Get start of the cheapest window by its size
-    cheapest_start_by_size = {
-        1: timedelta(days=1, hours=13, minutes=30),
-        2: timedelta(days=1, hours=12, minutes=30),
-        3: timedelta(days=1, hours=11, minutes=30),
-        4: timedelta(days=1, hours=10, minutes=30),
-        5: timedelta(days=1, hours=10, minutes=15),
-        6: timedelta(days=1, hours=9, minutes=45),
-        7: timedelta(days=1, hours=9, minutes=30),
-        8: timedelta(days=1, hours=9, minutes=15),
-        9: timedelta(days=1, hours=8, minutes=30),
-        10: timedelta(days=1, hours=8, minutes=30),
-        11: timedelta(days=1, hours=4, minutes=15),
-        12: timedelta(days=1, hours=3, minutes=30),
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(hass, entries)
+
+    ent_reg = er.async_get(hass)
+    unique_ids = [f"{entry.entry_id}_price_block_search_shared" for entry in entries]
+    registry_entries = [
+        ent_reg.async_get_entity_id("binary_sensor", DOMAIN, unique_id)
+        for unique_id in unique_ids
+    ]
+    assert all(entity_id is not None for entity_id in registry_entries)
+    assert len(set(registry_entries)) == 2
+
+    first_entity_id = registry_entries[0]
+    first_subentry = next(iter(entries[0].subentries.values()))
+    edited = {
+        **search,
+        "name": "Renamed schedule",
+        "length_hours": 2,
     }
-
-    window_by_size: dict[int, Window] = {}
-    for size, start in cheapest_start_by_size.items():
-        start_index = int(start.total_seconds() / (15 * 60))
-        window_by_size[size] = Window(
-            start=BASE_DT + start,
-            end=BASE_DT + start + timedelta(minutes=15 * size * 4),
-            prices=interval_prices[start_index : start_index + size * 4],
+    with freeze_time(BASE_DT):
+        hass.config_entries.async_update_subentry(
+            entries[0],
+            first_subentry,
+            data=edited,
+            title=str(edited["name"]),
         )
+        await hass.config_entries.async_reload(entries[0].entry_id)
+        await hass.async_block_till_done()
 
-    return window_by_size
+    assert (
+        ent_reg.async_get_entity_id("binary_sensor", DOMAIN, unique_ids[0])
+        == first_entity_id
+    )
+
+    with freeze_time(BASE_DT):
+        assert hass.config_entries.async_remove_subentry(
+            entries[0], first_subentry.subentry_id
+        )
+        await hass.config_entries.async_reload(entries[0].entry_id)
+        await hass.async_block_till_done()
+
+    assert ent_reg.async_get_entity_id("binary_sensor", DOMAIN, unique_ids[0]) is None
+    assert (
+        ent_reg.async_get_entity_id("binary_sensor", DOMAIN, unique_ids[1])
+        == registry_entries[1]
+    )
+    assert hass.states.get(cast(str, registry_entries[1])) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mock_ote_electricity", ["today"], indirect=True)
+async def test_searches_follow_template_and_tomorrow_data_availability(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+):
+    """Test template-backed searches recover while an unpublished plan stays unavailable."""
+    await hass.config.async_set_time_zone("Europe/Prague")
+    searches = [
+        {
+            "id": f"{price_type}-today",
+            "name": f"{price_type.title()} today",
+            "type": SearchType.TODAY,
+            "length_hours": 1,
+            CONF_PRICE_TYPE: price_type,
+        }
+        for price_type in ("buy", "sell")
+    ]
+    searches.append(
+        {
+            "id": "tomorrow-plan",
+            "name": "Tomorrow plan",
+            "type": SearchType.TOMORROW,
+            "length_hours": 1,
+            CONF_PRICE_TYPE: "spot",
+        }
+    )
+    entry = get_entry(
+        currency="EUR",
+        unit="MWh",
+        interval=SpotRateIntervalType.Hour,
+        cheapest_block_searches=searches,
+    )
+    template_options = dict(entry.options)
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    for price_type in ("buy", "sell"):
+        sensor = hass.states.get(
+            f"binary_sensor.{price_type}_cheapest_block_{price_type}_today"
+        )
+        assert sensor is not None
+        assert sensor.state != "unknown"
+    tomorrow = hass.states.get("binary_sensor.spot_cheapest_block_tomorrow_plan")
+    assert tomorrow is not None
+    assert tomorrow.state == "unknown"
+
+    with freeze_time(BASE_DT):
+        hass.config_entries.async_update_entry(
+            entry,
+            options={},
+        )
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    for price_type in ("buy", "sell"):
+        sensor = hass.states.get(
+            f"binary_sensor.{price_type}_cheapest_block_{price_type}_today"
+        )
+        assert sensor is not None
+        assert sensor.state == "unknown"
+
+    with freeze_time(BASE_DT):
+        hass.config_entries.async_update_entry(entry, options=template_options)
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    for price_type in ("buy", "sell"):
+        sensor = hass.states.get(
+            f"binary_sensor.{price_type}_cheapest_block_{price_type}_today"
+        )
+        assert sensor is not None
+        assert sensor.state != "unknown"
