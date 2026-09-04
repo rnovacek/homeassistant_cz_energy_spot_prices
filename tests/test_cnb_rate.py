@@ -3,28 +3,51 @@
 from datetime import date
 from decimal import Decimal
 import json
-from unittest.mock import AsyncMock, MagicMock
+from types import TracebackType
+from typing import Any, Callable, Self, cast
 
 import aiohttp
 
 from custom_components.cz_energy_spot_prices.cnb_rate import CnbRate
 
 
-def _session_returning(payload: str) -> MagicMock:
-    """Build an aiohttp session mock which decodes a raw JSON response."""
-    response = MagicMock(status=200)
+class _Response:
+    """Minimal asynchronous JSON response for the CNB client tests."""
 
-    async def json_response(*, loads=json.loads):
-        return loads(payload)
+    status = 200
 
-    response.json = AsyncMock(side_effect=json_response)
-    request_context = MagicMock()
-    request_context.__aenter__ = AsyncMock(return_value=response)
-    request_context.__aexit__ = AsyncMock(return_value=None)
+    def __init__(self, payload: str) -> None:
+        self._payload = payload
 
-    session = MagicMock(spec=aiohttp.ClientSession)
-    session.get.return_value = request_context
-    return session
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        pass
+
+    async def json(
+        self, *, loads: Callable[[str], Any] = json.loads
+    ) -> Any:
+        return loads(self._payload)
+
+
+class _Session:
+    """Minimal client session returning one predefined response."""
+
+    def __init__(self, payload: str) -> None:
+        self._payload = payload
+
+    def get(self, *args: object, **kwargs: object) -> _Response:
+        return _Response(self._payload)
+
+
+def _session_returning(payload: str) -> aiohttp.ClientSession:
+    return cast(aiohttp.ClientSession, _Session(payload))
 
 
 async def test_download_preserves_rate_decimal_precision() -> None:
