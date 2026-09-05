@@ -279,7 +279,9 @@ def validate_search_definition(
                 pass
             else:
                 duration = _fixed_window_duration_hours(st, et)
-                if duration < parsed_length_hours:
+                if st == et:
+                    errors["end_time"] = "start_equals_end"
+                elif duration < parsed_length_hours:
                     errors["length_hours"] = "longer_than_window"
 
     return errors
@@ -357,6 +359,7 @@ def find_price_block(
     objective: SearchObjective = SearchObjective.LOWEST,
     *,
     interval_seconds: int | None = None,
+    require_complete_window: bool = False,
 ) -> dict[str, Any] | None:
     """Find the lowest- or highest-priced consecutive block inside the window.
 
@@ -370,6 +373,24 @@ def find_price_block(
     interval_seconds = interval_seconds or _infer_interval_seconds(intervals)
     if interval_seconds is None:
         return None
+
+    interval_delta = timedelta(seconds=interval_seconds)
+    if require_complete_window:
+        covering = [
+            dt
+            for dt, _price in intervals
+            if dt < window_end and dt + interval_delta > window_start
+        ]
+        if (
+            not covering
+            or covering[0] > window_start
+            or covering[-1] + interval_delta < window_end
+            or any(
+                following - previous != interval_delta
+                for previous, following in zip(covering, covering[1:])
+            )
+        ):
+            return None
 
     try:
         required = compute_required_intervals(length_hours, interval_seconds)
@@ -396,8 +417,14 @@ def find_price_block(
     selected_end: datetime | None = None
     selected_prices: list[Decimal] | None = None
 
-    for i in range(len(filtered) - required + 1):
-        window_prices = [price for _dt, price in filtered[i : i + required]]
+    for start_index in range(len(filtered) - required + 1):
+        candidate = filtered[start_index : start_index + required]
+        if any(
+            following[0] - previous[0] != interval_delta
+            for previous, following in zip(candidate, candidate[1:])
+        ):
+            continue
+        window_prices = [price for _dt, price in candidate]
         window_sum = sum(window_prices, start=Decimal(0))
         is_better = selected_sum is None or (
             window_sum < selected_sum
@@ -406,10 +433,8 @@ def find_price_block(
         )
         if is_better:
             selected_sum = window_sum
-            selected_start = filtered[i][0]
-            selected_end = filtered[i + required - 1][0] + timedelta(
-                seconds=interval_seconds
-            )
+            selected_start = candidate[0][0]
+            selected_end = candidate[-1][0] + interval_delta
             selected_prices = window_prices
 
     if (
@@ -440,17 +465,17 @@ def _infer_interval_seconds(
 
 
 def _parse_time(value: str) -> time:
-    """Parse HH:MM string into time object."""
-    parts = value.strip().split(":")
-    hour = int(parts[0])
-    minute = int(parts[1]) if len(parts) > 1 else 0
-    return time(hour, minute)
+    """Parse a local ISO time without discarding seconds."""
+    parsed = time.fromisoformat(value.strip())
+    if parsed.tzinfo is not None:
+        raise ValueError("Search times must be local times without a UTC offset")
+    return parsed
 
 
 def _fixed_window_duration_hours(start: time, end: time) -> float:
     """Return duration in hours for a time window (handles cross-midnight)."""
-    start_min = start.hour * 60 + start.minute
-    end_min = end.hour * 60 + end.minute
-    if end_min <= start_min:
-        end_min += 24 * 60
-    return (end_min - start_min) / 60.0
+    day = datetime.min.date()
+    duration = datetime.combine(day, end) - datetime.combine(day, start)
+    if duration <= timedelta(0):
+        duration += timedelta(days=1)
+    return duration.total_seconds() / 3600
