@@ -4,8 +4,22 @@ logger:
   logs:
     custom_components.cz_energy_spot_prices: debug
 
-# Loads default set of integrations. Do not remove.
-default_config:
+homeassistant:
+  auth_providers:
+    - type: trusted_networks
+      trusted_networks:
+        - 127.0.0.1
+        - ::1
+      allow_bypass_login: true
+    - type: homeassistant
+
+# Optional integrations used by the browser-based test instance.
+history:
+logbook:
+energy:
 
 http:
   server_port: 9123
+
+go2rtc:
+  url: http://my-go2rtc-instance:1984
