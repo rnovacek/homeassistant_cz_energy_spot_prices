@@ -31,6 +31,7 @@ from custom_components.cz_energy_spot_prices.cheapest_blocks import (
     PriceBlockSearch,
     find_price_block,
     resolve_search_window,
+    validate_search_definition,
 )
 from custom_components.cz_energy_spot_prices.coordinator import (
     EntryConfig,
@@ -266,6 +267,72 @@ def test_highest_price_search_supports_tomorrow_and_fixed_windows():
     assert data.search_windows["fixed-highest"].start == fixed_start
 
 
+@pytest.mark.parametrize("interval_seconds", [900, 3600])
+@pytest.mark.parametrize("end_time", ["23:00:30", "01:00:30"])
+def test_fixed_window_preserves_seconds(interval_seconds, end_time):
+    """Whole price intervals must fit inside the exact configured times."""
+    interval = (
+        SpotRateIntervalType.QuarterHour
+        if interval_seconds == 900
+        else SpotRateIntervalType.Hour
+    )
+    search = PriceBlockSearch.from_mapping(
+        {
+            "id": "seconds",
+            "name": "Exact window",
+            "type": SearchType.FIXED,
+            "length_hours": interval_seconds / 3600,
+            "start_time": "22:00:30",
+            "end_time": end_time,
+        },
+        interval=interval,
+    )
+    assert search is not None
+    assert search.start_time == time(22, 0, 30)
+    assert search.end_time == time.fromisoformat(end_time)
+    today = datetime(2025, 10, 22, tzinfo=PRAGUE_TZ)
+    bounds = resolve_search_window(search, today + timedelta(hours=12), None)
+    assert bounds is not None
+    start, end = (bound.astimezone(UTC) for bound in bounds)
+    assert start.second == end.second == 30
+    base = start.replace(second=0)
+    step = timedelta(seconds=interval_seconds)
+    intervals = [(base + step * index, Decimal(index)) for index in range(20)]
+    result = find_price_block(
+        intervals, start, end, interval_seconds / 3600,
+        interval_seconds=interval_seconds,
+        require_complete_window=True,
+    )
+    if interval_seconds == 3600 and end_time == "23:00:30":
+        assert result is None
+    else:
+        assert result is not None
+        assert result["start"] == base + step
+        assert result["end"] <= end
+
+
+@pytest.mark.parametrize(
+    ("start_time", "end_time", "error_field", "error"),
+    [
+        ("22:00:30", "23:00:00", "length_hours", "longer_than_window"),
+        ("23:00:30", "00:00:00", "length_hours", "longer_than_window"),
+        ("22:00", "22:00:00", "end_time", "start_equals_end"),
+    ],
+)
+def test_fixed_window_validation_uses_seconds(start_time, end_time, error_field, error):
+    """Validation and persisted parsing agree on the actual window duration."""
+    search = {
+        "id": "seconds",
+        "name": "Exact window",
+        "type": SearchType.FIXED,
+        "length_hours": 1,
+        "start_time": start_time,
+        "end_time": end_time,
+    }
+    assert validate_search_definition(search) == {error_field: error}
+    assert PriceBlockSearch.from_mapping(search, interval=SpotRateIntervalType.Hour) is None
+
+
 def test_find_price_block_requires_interval_to_end_inside_window():
     """Test partial intervals at a time window boundary are not selected."""
     base = datetime(2025, 10, 22, 20, 0, tzinfo=UTC)
@@ -282,6 +349,80 @@ def test_find_price_block_requires_interval_to_end_inside_window():
     )
 
     assert result is None
+
+
+@pytest.mark.parametrize("interval_seconds", [900, 3600])
+@pytest.mark.parametrize("objective", list(SearchObjective))
+def test_find_price_block_skips_gaps(interval_seconds, objective):
+    """Missing prices cannot stretch a block beyond its requested duration."""
+    base = datetime(2025, 10, 22, tzinfo=UTC)
+    step = timedelta(seconds=interval_seconds)
+    preferred = Decimal(-10 if objective == SearchObjective.LOWEST else 10)
+    intervals = [
+        (base, preferred),
+        (base + step * 2, preferred),
+        (base + step * 3, Decimal(0)),
+        (base + step * 4, Decimal(0)),
+    ]
+
+    result = find_price_block(
+        intervals,
+        base,
+        base + step * 5,
+        length_hours=interval_seconds * 2 / 3600,
+        objective=objective,
+        interval_seconds=interval_seconds,
+    )
+
+    assert result is not None
+    assert result["start"] == base + step * 2
+    assert result["end"] - result["start"] == step * 2
+    assert result["prices"] == [preferred, Decimal(0)]
+    assert find_price_block(
+        intervals[:2],
+        base,
+        base + step * 3,
+        length_hours=interval_seconds * 2 / 3600,
+        interval_seconds=interval_seconds,
+    ) is None
+
+
+@pytest.mark.parametrize("search_type", list(SearchType))
+def test_configured_search_requires_all_prices_in_window(search_type):
+    """Even a gap outside the winning block invalidates a configured window."""
+    today = datetime(2025, 10, 22, tzinfo=PRAGUE_TZ)
+    rates = {
+        (today + timedelta(hours=hour)).astimezone(UTC): Decimal(hour)
+        for hour in range(48)
+    }
+    config = EntryConfig(
+        commodity=Commodity.Electricity,
+        interval=SpotRateIntervalType.Hour,
+        currency=Currency.EUR,
+        currency_human="EUR",
+        unit=EnergyUnit.MWh,
+        timezone="Europe/Prague",
+        zoneinfo=PRAGUE_TZ,
+        buy_template=None,
+        sell_template=None,
+        cheapest_block_searches=[
+            PriceBlockSearch(
+                id="complete",
+                name="Complete window",
+                type=search_type,
+                length_hours=2,
+                start_time=time(18),
+                end_time=time(23),
+            )
+        ],
+    )
+    missing_hour = 45 if search_type == SearchType.TOMORROW else 21
+    with freeze_time(today + timedelta(hours=12)):
+        complete = IntervalSpotRateData(config, rates, rate_template=None)
+        assert "complete" in complete.search_windows
+        del rates[(today + timedelta(hours=missing_hour)).astimezone(UTC)]
+        incomplete = IntervalSpotRateData(config, rates, rate_template=None)
+        assert "complete" not in incomplete.search_windows
 
 
 def test_find_price_block_handles_ties_and_negative_prices():

@@ -1,17 +1,79 @@
 """Tests for CNB exchange-rate coordination and persistence."""
 
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from freezegun import freeze_time
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.cz_energy_spot_prices.cnb_rate import CnbRateError
 from custom_components.cz_energy_spot_prices.coordinator import FxCoordinator
 
 from . import BASE_DT, get_entry, init_integration
+
+
+async def test_retry_refreshes_rates_and_preserves_midnight_schedule(
+    hass: HomeAssistant,
+) -> None:
+    """A real timer retries a failed request without losing the daily refresh."""
+    with freeze_time(BASE_DT) as freezer:
+        await hass.config.async_set_time_zone("Europe/Prague")
+        coordinator = FxCoordinator(hass)
+        rates = {"CZK": Decimal(1), "EUR": Decimal("24.315")}
+        fetch = AsyncMock(side_effect=[CnbRateError("CNB unavailable"), rates, rates])
+        with (
+            patch.object(coordinator, "_fetch_data", fetch),
+            patch.object(coordinator._store, "async_save", AsyncMock()),
+        ):
+            await coordinator.async_refresh()
+            assert not coordinator.last_update_success
+
+            freezer.tick(timedelta(seconds=10))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+            assert fetch.await_count == 2
+            assert coordinator.data == rates
+            assert coordinator.last_update_success
+
+            freezer.tick(timedelta(days=1))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+            assert fetch.await_count == 3
+        await coordinator.async_stop()
+        await coordinator.async_shutdown()
+
+
+@pytest.mark.parametrize("stop", [False, True])
+async def test_pending_retry_is_cancelled(hass: HomeAssistant, stop: bool) -> None:
+    """Stopping or a successful manual refresh cancels the outstanding retry."""
+    with freeze_time(BASE_DT) as freezer:
+        coordinator = FxCoordinator(hass)
+        fetch = AsyncMock(
+            side_effect=[CnbRateError("CNB unavailable"), {"EUR": Decimal("24.315")}]
+        )
+        with (
+            patch.object(coordinator, "_fetch_data", fetch),
+            patch.object(coordinator._store, "async_save", AsyncMock()),
+        ):
+            await coordinator.async_refresh()
+            if stop:
+                await coordinator.async_stop()
+            else:
+                await coordinator.async_refresh()
+            expected_calls = fetch.await_count
+            freezer.tick(timedelta(seconds=10))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+            assert fetch.await_count == expected_calls
+        await coordinator.async_stop()
+        await coordinator.async_shutdown()
 
 
 async def test_loads_persisted_rates(hass: HomeAssistant) -> None:

@@ -393,6 +393,7 @@ class IntervalSpotRateData:
                 search.length_hours,
                 search.objective,
                 interval_seconds=interval_seconds,
+                require_complete_window=True,
             )
             if result is None:
                 _LOGGER.debug(
@@ -968,6 +969,7 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
 
         self._cnb = CnbRate(session=async_get_clientsession(hass))
         self._retry_attempt = 0
+        self._retry_schedule: Callable[[], None] | None = None
         self._store: Store[dict[str, str]] = Store(
             hass,
             STORAGE_VERSION,
@@ -1021,6 +1023,9 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
 
     async def async_stop(self):
         """Cancel scheduled jobs."""
+        if self._retry_schedule:
+            self._retry_schedule()
+            self._retry_schedule = None
         if self._update_schedule:
             _LOGGER.debug("Unscheduling FX coordinator")
             self._update_schedule()
@@ -1038,6 +1043,9 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
 
     async def _fetch_data_with_retry(self):
         _LOGGER.debug("FxCoordinator._fetch_data_with_retry")
+        if self._retry_schedule:
+            self._retry_schedule()
+            self._retry_schedule = None
         current_delay = min(2**self._retry_attempt, self.MAX_RETRY_DELAY)
         try:
             async with timeout(30):
@@ -1068,10 +1076,10 @@ class FxCoordinator(DataUpdateCoordinator[dict[str, Decimal] | None]):
         # ``self._update_schedule``. Otherwise the original midnight callback
         # would leak (its cancel handle would be lost) and we'd also lose the
         # daily refresh after the first failure.
-        event.async_call_later(
+        self._retry_schedule = event.async_call_later(
             self.hass,
             delay=current_delay,
-            action=lambda dt: self.async_request_refresh(),
+            action=self.on_schedule,
         )
 
         raise UpdateFailed("Failed to update CNB FX rates")
