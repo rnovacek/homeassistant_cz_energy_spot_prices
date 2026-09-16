@@ -13,7 +13,7 @@ If this integration saves (or earns) you some money, you can [buy me a coffee â˜
 - Supports multiple currencies (EUR, CZK) and energy units (kWh, MWh).
 - Configurable templates for buy/sell prices, including VAT and distribution fees.
 - Includes sensors for monitoring current, cheapest, and most expensive electricity prices.
-- Configurable binary sensors for lowest- and highest-priced **consecutive blocks**, including today, tomorrow, and chosen time windows.
+- Configurable binary sensors for lowest- and highest-priced **consecutive blocks or independent intervals**, including today, tomorrow, and chosen time windows.
 - Persists last downloaded prices across Home Assistant restarts so sensors are available immediately on startup.
 - Compatible with Home Assistant automations for energy optimization.
 
@@ -140,7 +140,7 @@ When the 15-minute interval is selected, the same sensors are also created with 
 | **Tomorrow Spot Electricity Hour Order** | no value | dictionary with timestamps as keys and `[order, price]` as values |
 | **Spot Electricity Has Tomorrow Data** | `On` when data for tomorrow are loaded, `Off` otherwise (created only once for all electricity instances) | |
 | **Spot Electricity Is Cheapest** | `On` when current interval has the cheapest price of the day, `Off` otherwise | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
-| **Spot/Buy/Sell Price Block Search** | `On` when current time falls inside a configured lowest- or highest-price consecutive block search (one binary sensor per configured search) | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean) |
+| **Spot/Buy/Sell Price Block Search** | `On` during the selected lowest- or highest-price block or independent intervals (one binary sensor per configured search) | [Start](#start)<br>[Start hour](#start-hour)<br>[End](#end)<br>[End hour](#end-hour)<br>[Min](#min)<br>[Max](#max)<br>[Mean](#mean)<br>[Intervals](#selection-modes) (independent mode only) |
 
 If you configure templates for buy and sell prices, there will also be similar `Buy *` and `Sell *` sensors with the same structure.
 
@@ -197,19 +197,28 @@ average (mean) price in the selected price block
 
 ## Price block searches
 
-In addition to the always-present *Spot Electricity Is Cheapest* binary sensor (which marks the single cheapest interval of the day), you can create custom **consecutive price block** searches for either the lowest or highest prices.
+In addition to the always-present *Spot Electricity Is Cheapest* binary sensor (which marks the single cheapest interval of the day), you can create custom **consecutive price block or independent interval** searches for either the lowest or highest prices.
 
-Open the **Czech Energy Spot Prices** integration page and choose **Add price block search**. If you have more than one electricity configuration, Home Assistant first asks which one the search belongs to. Choose the search period, then configure its name, price source, objective, duration, and window times when applicable.
+Open the **Czech Energy Spot Prices** integration page and choose **Add price block search**. If you have more than one electricity configuration, Home Assistant first asks which one the search belongs to. Choose the search period, then configure its name, price source, objective, selection mode, duration, and window times when applicable.
 
-Each search is shown as a separate entry beneath its electricity configuration. Its headline summarizes the configured name, search period, objective, price source, and duration. Use the gear button beside it to reconfigure the search, or its menu to rename or delete it. Each search creates one binary sensor. The sensor turns `On` while the current time falls inside the matching block, and its attributes contain the selected interval:
+Each search is shown as a separate entry beneath its electricity configuration. Its headline summarizes the configured name, search period, objective, price source, and duration, with an additional label for independent intervals. Use the gear button beside it to reconfigure the search, or its menu to rename or delete it. Each search creates one binary sensor. The sensor turns `On` only during the selected block or intervals, and its attributes contain the result:
 
 - `Start` and `End`
-- `Min`, `Max`, and `Mean` price in the block
+- `Min`, `Max`, and `Mean` price of the selected intervals
 - `Length hours`, `Price type`, `Objective`, and `Search type`
 
 Fixed time-window searches are evaluated only when prices cover the complete configured window without gaps. An internal gap in an upcoming window also triggers fallback to the latest complete occurrence. Until an upcoming cross-midnight window is fully published, the sensor retains the latest fully evaluated occurrence and remains `Off` once that occurrence has ended.
 
 For 60-minute electricity instances, the sensor also exposes `Start hour` and `End hour`. For 15-minute instances, the start and end timestamps are more precise than whole hours, so use `Start` and `End`.
+
+### Selection modes
+
+- **Continuous block** is the default and keeps the existing behavior: the device runs for the requested duration without gaps. Existing searches, entity IDs, attributes, and automations stay unchanged; no reconfiguration is needed after upgrading.
+- **Independent intervals** selects exactly enough of the lowest- or highest-priced intervals to meet the requested duration. The intervals need not be adjacent. For example, a duration of `1 h` with 15-minute prices selects exactly four intervals; with 60-minute prices it selects one. Equal-price intervals are selected in chronological order, including when prices are zero or negative.
+
+In independent mode, the binary sensor turns `Off` in gaps between selected intervals. `Length hours` is the total selected running time, not the elapsed time between the first start and last end. The additional `Intervals` attribute lists every selected interval as a mapping with `Start` and `End` timestamps in your Home Assistant timezone, and `Search mode` is `independent`. The top-level `Start` and `End` (and `Start hour`/`End hour`) mark only the outer boundaries: use the binary state or `Intervals` for automation, not that entire range. `Min`, `Max`, and `Mean` exclude the gaps.
+
+Both modes use the full configured search period, including already elapsed intervals, and require complete prices for that period. The existing rules for missing tomorrow prices and cross-midnight fallback are unchanged. The new mode does not track actual device running time or compensate for a device started after a selected interval has passed.
 
 ### Search periods
 
@@ -223,8 +232,8 @@ The **Search period** decides where the integration is allowed to look for the p
 
 Choose the **Find** objective according to the automation:
 
-- **Lowest price** selects the consecutive block with the lowest total price, normally used for consumption.
-- **Highest price** selects the consecutive block with the highest total price, useful for export, battery discharge, or avoiding consumption. Equal-price results choose the earliest block.
+- **Lowest price** selects the block or independent intervals with the lowest total price, normally used for consumption.
+- **Highest price** selects the block or independent intervals with the highest total price, useful for export, battery discharge, or avoiding consumption. Equal-price results choose the earliest block or intervals.
 
 Choose the **Price source** according to the decision you are automating:
 
@@ -235,6 +244,10 @@ Choose the **Price source** according to the decision you are automating:
 For most household automations that turn devices on, **Buy** is usually the right price type if you configured a buy template. It reflects what you actually pay, not only the market price.
 
 ### Real-world examples
+
+**Heat water during the four cheapest quarter-hours**
+
+On a 15-minute electricity configuration, create a search with **Today**, **Lowest price**, **Independent intervals**, duration **1 h**, and price source **Buy** (or **Spot** if no buy template is configured). This selects four quarter-hours anywhere in the day, not necessarily consecutive. Use the binary sensor's `On` state to enable the heater and its `Off` state to disable it. A fixed time window can restrict the same search, for example to `22:00` through `06:00`.
 
 **Run a dishwasher during the cheapest 2 hours today**
 

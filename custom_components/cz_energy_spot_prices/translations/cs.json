@@ -26,6 +26,12 @@
                 "highest": "Nejvyšší cena"
             }
         },
+        "search_mode": {
+            "options": {
+                "continuous": "Souvislý blok",
+                "independent": "Samostatné intervaly"
+            }
+        },
         "price_type": {
             "options": {
                 "spot": "Spotová",
@@ -85,7 +91,7 @@
     },
     "config_subentries": {
         "price_block": {
-            "entry_type": "Binární senzor aktivní během vybraného cenového bloku",
+            "entry_type": "Binární senzor aktivní během vybraného cenového bloku nebo intervalů",
             "initiate_flow": {
                 "user": "Přidat vyhledávání cenového bloku",
                 "reconfigure": "Upravit vyhledávání cenového bloku"
@@ -93,13 +99,13 @@
             "step": {
                 "user": {
                     "title": "Přidat vyhledávání cenového bloku",
-                    "description": "Vytvoří binární senzor, který se zapne během souvislého bloku s nejnižší nebo nejvyšší cenou. Zvolte vyhledávání pro dnešek, zítřek nebo konkrétní časové okno.",
+                    "description": "Vytvoří binární senzor, který se zapne během souvislého bloku nebo samostatných intervalů s nejnižší nebo nejvyšší cenou. Zvolte vyhledávání pro dnešek, zítřek nebo konkrétní časové okno.",
                     "menu_options": {"add_today": "Dnes", "add_tomorrow": "Zítra", "add_fixed": "Časové okno"}
                 },
-                "add_today": {"title": "Přidat dnešní vyhledávání", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "length_hours": "Doba trvání"}},
-                "add_tomorrow": {"title": "Přidat zítřejší vyhledávání", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "length_hours": "Doba trvání"}},
-                "add_fixed": {"title": "Přidat vyhledávání v časovém okně", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "length_hours": "Doba trvání", "start_time": "Začátek okna", "end_time": "Konec okna"}},
-                "reconfigure": {"title": "Upravit vyhledávání cenového bloku", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "length_hours": "Doba trvání", "type": "Období vyhledávání", "start_time": "Začátek okna", "end_time": "Konec okna"}}
+                "add_today": {"title": "Přidat dnešní vyhledávání", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "mode": "Režim výběru", "length_hours": "Doba trvání"}},
+                "add_tomorrow": {"title": "Přidat zítřejší vyhledávání", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "mode": "Režim výběru", "length_hours": "Doba trvání"}},
+                "add_fixed": {"title": "Přidat vyhledávání v časovém okně", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "mode": "Režim výběru", "length_hours": "Doba trvání", "start_time": "Začátek okna", "end_time": "Konec okna"}},
+                "reconfigure": {"title": "Upravit vyhledávání cenového bloku", "data": {"name": "Název", "price_type": "Zdroj ceny", "objective": "Najít", "mode": "Režim výběru", "length_hours": "Doba trvání", "type": "Období vyhledávání", "start_time": "Začátek okna", "end_time": "Konec okna"}}
             },
             "error": {
                 "required": "Povinné",
