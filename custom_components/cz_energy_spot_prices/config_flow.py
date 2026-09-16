@@ -3,10 +3,12 @@ import uuid
 from typing import Any, Final, cast, override
 from homeassistant.helpers.translation import async_get_translations
 import voluptuous as vol
+from jinja2 import nodes
 
 from homeassistant import config_entries
 from homeassistant.config_entries import (
     ConfigEntry,
+    ConfigFlowResult,
     ConfigSubentry,
     ConfigSubentryFlow,
     SubentryFlowResult,
@@ -23,7 +25,7 @@ from homeassistant.helpers.selector import (
     NumberSelectorMode,
     TimeSelector,
 )
-from homeassistant.helpers.template import Template
+from homeassistant.helpers.template import Template, TemplateEnvironment
 from homeassistant.exceptions import TemplateError
 
 from .cheapest_blocks import (
@@ -222,6 +224,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
+    def __init__(self) -> None:
+        super().__init__()
+        self._pending_template_options: dict[str, Any] | None = None
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ):  # -> FlowResult:
@@ -297,9 +303,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     **options,
                     **{k: v for k, v in user_input.items() if v is not None},
                 }
+                environment = TemplateEnvironment(self.hass)
+                if any(
+                    isinstance(call.node, nodes.Name)
+                    and call.node.name in {"now", "utcnow"}
+                    for source in (
+                        additional_costs_buy_electricity,
+                        additional_costs_sell_electricity,
+                        additional_costs_buy_gas,
+                    )
+                    for call in environment.parse(source).find_all(nodes.Call)
+                ):
+                    self._pending_template_options = new_options
+                    return await self.async_step_template_time_warning()
                 return self.async_create_entry(title="", data=new_options)
         else:
-            user_input = options
+            user_input = self._pending_template_options or options
 
         commodity = Commodity(self.config_entry.data.get(CONF_COMMODITY, ELECTRICITY))
         if commodity == Commodity.Gas:
@@ -336,6 +355,23 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=options_schema,
             errors=errors,
         )
+
+    async def async_step_template_time_warning(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Offer editing or saving templates that use the current time."""
+        return self.async_show_menu(
+            step_id="template_time_warning",
+            menu_options=["configure_templates", "save_templates"],
+        )
+
+    async def async_step_save_templates(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Save explicitly accepted current-time templates without altering them."""
+        if self._pending_template_options is None:
+            return await self.async_step_configure_templates()
+        return self.async_create_entry(title="", data=self._pending_template_options)
 
 
 class PriceBlockSubentryFlowHandler(ConfigSubentryFlow):

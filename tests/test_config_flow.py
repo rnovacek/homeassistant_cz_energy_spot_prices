@@ -13,6 +13,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_CURRENCY, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.cz_energy_spot_prices.cheapest_blocks import (
@@ -444,3 +445,82 @@ async def test_subentry_rejects_duplicate_title(hass: HomeAssistant):
     )
     assert result["type"] == "form"
     assert result["errors"]["name"] == "duplicate_name"
+
+
+@pytest.mark.parametrize(
+    ("commodity", "field", "source"),
+    [
+        ("electricity", CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY, "{{ value + now().hour }}"),
+        ("electricity", CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY, "{{ value + utcnow ().hour }}"),
+        ("gas", "additional_costs_buy_gas", "{% set current = now() %}{{ value + current.day }}"),
+    ],
+)
+async def test_template_current_time_warning_can_save_or_edit(
+    hass: HomeAssistant, commodity: str, field: str, source: str
+):
+    entry = _entry({"unrelated_option": 42}, commodity=commodity)
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "configure_templates"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {field: source}
+    )
+    assert result["type"] == "menu"
+    assert result["step_id"] == "template_time_warning"
+    assert list(result["menu_options"]) == ["configure_templates", "save_templates"]
+    assert entry.options == {"unrelated_option": 42}
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "configure_templates"}
+    )
+    key = next(key for key in result["data_schema"].schema if key.schema == field)
+    assert key.default() == source
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {field: source}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "save_templates"}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["unrelated_option"] == 42
+    assert entry.options[field] == source
+
+
+@pytest.mark.parametrize(
+    ("source", "warns"),
+    [
+        ("{{ value + now().hour }}", True),
+        ("{{ value + as_local(hour).hour }}", False),
+        ("{# now() utcnow() #}{{ value }}", False),
+        ("{% set text = 'now() utcnow()' %}{{ value }}", False),
+        ("{% for x in [1] %}{% do [1].append(x) %}{% break %}{% endfor %}{{ value }}", False),
+    ],
+)
+async def test_template_warning_edit_revalidates(
+    hass: HomeAssistant, source: str, warns: bool
+):
+    field = CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY
+    entry = _entry()
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "configure_templates"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {field: "{{ now().hour + value }}"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "configure_templates"}
+    )
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], {field: "{{ now( }}"}
+        )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {field: source}
+    )
+    assert result["type"] == ("menu" if warns else "create_entry")
+    if not warns:
+        assert entry.options[field] == source
