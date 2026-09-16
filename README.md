@@ -58,6 +58,8 @@ If you do not enter a template, the corresponding buy/sell sensors are not creat
 
 ### Example templates
 
+Use `as_local(hour)` for electricity tariff hours (including quarter-hour prices), or `as_local(day)` for gas delivery dates. `now()` and `utcnow()` return the time the template runs, not the delivery time: choosing VT/NT with `now().hour` applies the current tariff to every interval. When saving a template that calls either function, the integration warns you and lets you edit it or save anyway if intentional.
+
 **Electricity cost when buying**
 
 ```jinja

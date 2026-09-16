@@ -82,6 +82,14 @@
                     "additional_costs_sell_electricity": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny, například pro odečtení fixního poplatku operátora ve výši 0.25 použijte `'{{ value - 0.25 }}`.  Použijte `hour` pro výpočet ceny v dané hodině, pokud se sazba v jednotlivých hodinách liší, například pro vysoký a nízký tarif. Hodnota `hour` je v UTC. Pokud potřebujete lokální čas použijte `as_local(hour)`. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen.",
                     "additional_costs_buy_gas": "Šablona pro výpočet konečné ceny po zahrnutí dodatečných nákladů. Použijte `value` pro získání aktualní ceny. Můžete použít `day` v UTC pro spotové ceny. Pokud nezadáte žádnou šablonu, senzor nebude vytvořen."
                 }
+            },
+            "template_time_warning": {
+                "title": "Šablona používá aktuální čas",
+                "description": "Šablona ceny volá `now()` nebo `utcnow()`. Tyto funkce vracejí čas vyhodnocení šablony, takže výběr tarifu podle nich použije aktuální tarif pro všechny intervaly. Pro čas dodávky použijte `as_local(hour)` u elektřiny nebo `as_local(day)` u plynu. Šablony můžete upravit, nebo je přesto uložit, pokud je toto chování záměrné.",
+                "menu_options": {
+                    "configure_templates": "Upravit šablony",
+                    "save_templates": "Přesto uložit"
+                }
             }
         },
         "error": {
