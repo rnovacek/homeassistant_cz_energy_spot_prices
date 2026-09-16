@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.cz_energy_spot_prices.const import (
     CONF_PRICE_TYPE,
+    CONF_SEARCH_MODE,
     CONF_SEARCH_OBJECTIVE,
     Commodity,
     Currency,
@@ -23,6 +24,7 @@ from custom_components.cz_energy_spot_prices.const import (
     EnergyUnit,
     FX_COORDINATOR,
     PRICE_BLOCK_SUBENTRY_TYPE,
+    SearchMode,
     SearchObjective,
     SearchType,
     SpotRateIntervalType,
@@ -113,11 +115,13 @@ def test_fixed_overnight_search_uses_previous_complete_window_until_publish(
 @pytest.mark.parametrize("objective", list(SearchObjective))
 @pytest.mark.parametrize("zone", ["Europe/Prague", "America/New_York"])
 @pytest.mark.parametrize("date", [(2025, 10, 22), (2026, 3, 29), (2025, 10, 26)])
+@pytest.mark.parametrize("mode", list(SearchMode))
 def test_fixed_window_gap_falls_back_to_latest_complete_occurrence(
     interval_seconds: int,
     objective: SearchObjective,
     zone: str,
     date: tuple[int, int, int],
+    mode: SearchMode,
 ) -> None:
     """Internal gaps must preserve the previous result until coverage recovers."""
     tz = ZoneInfo(zone)
@@ -151,6 +155,7 @@ def test_fixed_window_gap_falls_back_to_latest_complete_occurrence(
                 start_time=time(20),
                 end_time=time(6),
                 objective=objective,
+                mode=mode,
             )
         ],
     )
@@ -337,7 +342,8 @@ def test_highest_price_search_supports_tomorrow_and_fixed_windows():
 
 @pytest.mark.parametrize("interval_seconds", [900, 3600])
 @pytest.mark.parametrize("end_time", ["23:00:30", "01:00:30"])
-def test_fixed_window_preserves_seconds(interval_seconds, end_time):
+@pytest.mark.parametrize("mode", list(SearchMode))
+def test_fixed_window_preserves_seconds(interval_seconds, end_time, mode: SearchMode):
     """Whole price intervals must fit inside the exact configured times."""
     interval = (
         SpotRateIntervalType.QuarterHour
@@ -352,6 +358,7 @@ def test_fixed_window_preserves_seconds(interval_seconds, end_time):
             "length_hours": interval_seconds / 3600,
             "start_time": "22:00:30",
             "end_time": end_time,
+            CONF_SEARCH_MODE: mode,
         },
         interval=interval,
     )
@@ -370,6 +377,7 @@ def test_fixed_window_preserves_seconds(interval_seconds, end_time):
         intervals, start, end, interval_seconds / 3600,
         interval_seconds=interval_seconds,
         require_complete_window=True,
+        mode=mode,
     )
     if interval_seconds == 3600 and end_time == "23:00:30":
         assert result is None
@@ -456,7 +464,8 @@ def test_find_price_block_skips_gaps(interval_seconds, objective):
 
 
 @pytest.mark.parametrize("search_type", list(SearchType))
-def test_configured_search_requires_all_prices_in_window(search_type):
+@pytest.mark.parametrize("mode", list(SearchMode))
+def test_configured_search_requires_all_prices_in_window(search_type, mode: SearchMode):
     """Even a gap outside the winning block invalidates a configured window."""
     today = datetime(2025, 10, 22, tzinfo=PRAGUE_TZ)
     rates = {
@@ -481,6 +490,7 @@ def test_configured_search_requires_all_prices_in_window(search_type):
                 length_hours=2,
                 start_time=time(18),
                 end_time=time(23),
+                mode=mode,
             )
         ],
     )
@@ -491,6 +501,98 @@ def test_configured_search_requires_all_prices_in_window(search_type):
         del rates[(today + timedelta(hours=missing_hour)).astimezone(UTC)]
         incomplete = IntervalSpotRateData(config, rates, rate_template=None)
         assert "complete" not in incomplete.search_windows
+
+
+@pytest.mark.parametrize(
+    ("mode_data", "expected"),
+    [
+        ({}, SearchMode.CONTINUOUS),
+        ({CONF_SEARCH_MODE: "continuous"}, SearchMode.CONTINUOUS),
+        ({CONF_SEARCH_MODE: None}, SearchMode.CONTINUOUS),
+        ({CONF_SEARCH_MODE: "unknown"}, SearchMode.CONTINUOUS),
+        ({CONF_SEARCH_MODE: "independent"}, SearchMode.INDEPENDENT),
+    ],
+)
+def test_price_block_search_mode_defaults(
+    mode_data: dict[str, object], expected: SearchMode
+) -> None:
+    search = PriceBlockSearch.from_mapping(
+        {
+            "id": "mode",
+            "name": "Mode",
+            "type": SearchType.TODAY,
+            "length_hours": 1,
+            **mode_data,
+        },
+        interval=SpotRateIntervalType.QuarterHour,
+    )
+
+    assert search is not None
+    assert search.mode == expected
+
+
+@pytest.mark.parametrize("interval_seconds", [900, 3600])
+@pytest.mark.parametrize("objective", list(SearchObjective))
+def test_find_price_block_preserves_continuous_default(
+    interval_seconds: int, objective: SearchObjective
+) -> None:
+    base = datetime(2025, 10, 22, tzinfo=UTC)
+    step = timedelta(seconds=interval_seconds)
+    prices = [Decimal(-10), Decimal(0)] * 5
+    intervals = [(base + step * index, price) for index, price in enumerate(prices)]
+
+    result = find_price_block(
+        intervals,
+        base,
+        base + step * len(prices),
+        length_hours=interval_seconds * 4 / 3600,
+        objective=objective,
+        interval_seconds=interval_seconds,
+    )
+
+    assert result == {
+        "start": base,
+        "end": base + step * 4,
+        "prices": prices[:4],
+        "total": Decimal(-20),
+        "average": Decimal(-5),
+    }
+
+
+@pytest.mark.parametrize("interval_seconds", [900, 3600])
+@pytest.mark.parametrize("objective", list(SearchObjective))
+def test_find_price_block_selects_independent_intervals(
+    interval_seconds: int, objective: SearchObjective
+) -> None:
+    base = datetime(2025, 10, 22, tzinfo=UTC)
+    step = timedelta(seconds=interval_seconds)
+    preferred = Decimal(-10 if objective == SearchObjective.LOWEST else 0)
+    other = Decimal(0 if objective == SearchObjective.LOWEST else -10)
+    prices = [preferred, other] * 5
+    intervals = [(base + step * index, price) for index, price in enumerate(prices)]
+
+    result = find_price_block(
+        intervals,
+        base,
+        base + step * len(prices),
+        length_hours=interval_seconds * 4 / 3600,
+        objective=objective,
+        interval_seconds=interval_seconds,
+        require_complete_window=True,
+        mode=SearchMode.INDEPENDENT,
+    )
+
+    assert result == {
+        "start": base,
+        "end": base + step * 7,
+        "prices": [preferred] * 4,
+        "total": preferred * 4,
+        "average": preferred,
+        "intervals": [
+            (base + step * index, base + step * (index + 1))
+            for index in (0, 2, 4, 6)
+        ],
+    }
 
 
 def test_find_price_block_handles_ties_and_negative_prices():
@@ -530,6 +632,70 @@ def test_find_price_block_handles_ties_and_negative_prices():
     assert result is not None
     assert result["start"] == base
     assert result["total"] == Decimal(-10)
+
+
+@pytest.mark.parametrize("interval_seconds", [900, 3600])
+@pytest.mark.parametrize(
+    ("zone", "date"),
+    [
+        ("Europe/Prague", (2026, 3, 29)),
+        ("Europe/Prague", (2025, 10, 26)),
+        ("America/New_York", (2026, 3, 8)),
+        ("America/New_York", (2025, 11, 2)),
+    ],
+)
+def test_independent_search_preserves_intervals_across_midnight_and_dst(
+    interval_seconds: int, zone: str, date: tuple[int, int, int]
+) -> None:
+    zoneinfo = ZoneInfo(zone)
+    today = datetime(*date, tzinfo=zoneinfo)
+    available_start = (today - timedelta(days=1)).astimezone(UTC)
+    available_end = (today + timedelta(days=1)).astimezone(UTC)
+    step = timedelta(seconds=interval_seconds)
+    rates = {
+        available_start + index * step: Decimal(100)
+        for index in range(int((available_end - available_start) / step))
+    }
+    window_start = (today - timedelta(hours=2)).astimezone(UTC)
+    selected_starts = [window_start + timedelta(hours=hour) for hour in (0, 3, 4, 5)]
+    for start_utc in selected_starts:
+        rates[start_utc] = Decimal(1)
+    config = EntryConfig(
+        commodity=Commodity.Electricity,
+        interval=(
+            SpotRateIntervalType.Hour if interval_seconds == 3600
+            else SpotRateIntervalType.QuarterHour
+        ),
+        currency=Currency.EUR,
+        currency_human="EUR",
+        unit=EnergyUnit.MWh,
+        timezone=zone,
+        zoneinfo=zoneinfo,
+        buy_template=None,
+        sell_template=None,
+        cheapest_block_searches=[
+            PriceBlockSearch(
+                id="independent-dst",
+                name="Independent DST",
+                type=SearchType.FIXED,
+                length_hours=interval_seconds * 4 / 3600,
+                start_time=time(22),
+                end_time=time(6),
+                mode=SearchMode.INDEPENDENT,
+            )
+        ],
+    )
+
+    with freeze_time(today + timedelta(hours=1)):
+        data = IntervalSpotRateData(config, rates, rate_template=None)
+
+    window = data.search_windows["independent-dst"]
+    assert window.intervals == [(start, start + step) for start in selected_starts]
+    assert sum((end - start for start, end in window.intervals), timedelta()) == step * 4
+    assert window.prices == [Decimal(1)] * 4
+    assert all(window.contains(start) for start in selected_starts)
+    assert not window.contains(selected_starts[0] + step)
+    assert not window.contains(window.end)
 
 
 def test_custom_windows_resolve_across_both_dst_transitions():
@@ -878,6 +1044,35 @@ async def test_legacy_cheapest_block_entities_are_preserved_after_migration(
         registry_entry.unique_id
         == f"{entry.entry_id}_spot_electricity_is_cheapest_2_hours_block"
     )
+    assert all(
+        search.mode == SearchMode.CONTINUOUS
+        for search in entry.runtime_data.config.cheapest_block_searches
+    )
+    assert all(CONF_SEARCH_MODE not in search.data for search in entry.subentries.values())
+    legacy = hass.states.get(registry_entry.entity_id)
+    assert legacy is not None
+    assert "Intervals" not in legacy.attributes
+    today_subentry = next(
+        subentry for subentry in entry.subentries.values()
+        if subentry.data["type"] == SearchType.TODAY
+        and subentry.data["length_hours"] == 2
+    )
+
+    with freeze_time(BASE_DT):
+        hass.config_entries.async_update_subentry(
+            entry,
+            today_subentry,
+            data={**today_subentry.data, CONF_SEARCH_MODE: SearchMode.INDEPENDENT.value},
+        )
+        await hass.async_block_till_done()
+
+    independent = hass.states.get("binary_sensor.spot_cheapest_block_today_2h")
+    assert independent is not None
+    assert independent.attributes["Search mode"] == SearchMode.INDEPENDENT
+    unchanged_legacy = hass.states.get(registry_entry.entity_id)
+    assert unchanged_legacy is not None
+    assert unchanged_legacy.state == legacy.state
+    assert unchanged_legacy.attributes == legacy.attributes
 
 
 @pytest.mark.asyncio
@@ -987,6 +1182,106 @@ async def test_only_stale_released_legacy_block_sensors_are_removed(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("interval", [SpotRateIntervalType.Hour, SpotRateIntervalType.QuarterHour])
+@pytest.mark.parametrize(
+    ("price_type", "objective", "preferred", "other", "expected_price"),
+    [
+        ("spot", SearchObjective.LOWEST, Decimal(1), Decimal(100), 1.0),
+        ("buy", SearchObjective.LOWEST, Decimal(1), Decimal(100), 11.0),
+        ("sell", SearchObjective.HIGHEST, Decimal(100), Decimal(1), 99.0),
+    ],
+)
+async def test_independent_sensor_switches_off_between_selected_intervals(
+    hass: HomeAssistant,
+    mock_ote_electricity: AsyncMock,
+    mock_cnb: AsyncMock,
+    interval: SpotRateIntervalType,
+    price_type: str,
+    objective: SearchObjective,
+    preferred: Decimal,
+    other: Decimal,
+    expected_price: float,
+) -> None:
+    await hass.config.async_set_time_zone("Europe/Prague")
+    interval_seconds = 900 if interval == SpotRateIntervalType.QuarterHour else 3600
+    step = timedelta(seconds=interval_seconds)
+    length_hours = interval_seconds * 4 / 3600
+    searches = [
+        {
+            "id": "continuous",
+            "name": "Continuous",
+            "type": SearchType.TODAY,
+            "length_hours": length_hours,
+            CONF_PRICE_TYPE: price_type,
+            CONF_SEARCH_OBJECTIVE: objective,
+        },
+        {
+            "id": "independent",
+            "name": "Independent",
+            "type": SearchType.TODAY,
+            "length_hours": length_hours,
+            CONF_PRICE_TYPE: price_type,
+            CONF_SEARCH_OBJECTIVE: objective,
+            CONF_SEARCH_MODE: SearchMode.INDEPENDENT,
+        },
+    ]
+    rates = {
+        BASE_DT + step * index: other for index in range(24 * 3600 // interval_seconds)
+    }
+    for index in (0, 2, 4, 6):
+        rates[BASE_DT + step * index] = preferred
+
+    with freeze_time(BASE_DT):
+        async_fire_time_changed(hass, BASE_DT)
+        assert await init_integration(
+            hass,
+            [get_entry(interval=interval, cheapest_block_searches=searches)],
+        )
+        spot_coordinator = hass.data[DOMAIN][SPOT_ELECTRICTY_COORDINATOR]
+        spot_coordinator.async_set_updated_data({interval: rates})
+        await hass.async_block_till_done()
+
+    suffix = "_15min" if interval == SpotRateIntervalType.QuarterHour else ""
+    block_type = (
+        "cheapest_block" if objective == SearchObjective.LOWEST else "highest_price_block"
+    )
+    continuous_id = f"binary_sensor.{price_type}_{block_type}_continuous{suffix}"
+    independent_id = f"binary_sensor.{price_type}_{block_type}_independent{suffix}"
+    continuous = hass.states.get(continuous_id)
+    independent = hass.states.get(independent_id)
+    assert continuous is not None
+    assert independent is not None
+    assert continuous.attributes["Start"] == BASE_DT.astimezone(PRAGUE_TZ)
+    assert continuous.attributes["End"] == (BASE_DT + step * 4).astimezone(PRAGUE_TZ)
+    assert "Intervals" not in continuous.attributes
+    assert "Search mode" not in continuous.attributes
+    assert independent.attributes["Start"] == BASE_DT.astimezone(PRAGUE_TZ)
+    assert independent.attributes["End"] == (BASE_DT + step * 7).astimezone(PRAGUE_TZ)
+    assert independent.attributes["Length hours"] == length_hours
+    assert independent.attributes["Mean"] == expected_price
+    assert independent.attributes["Search mode"] == SearchMode.INDEPENDENT.value
+    assert independent.attributes["Intervals"] == [
+        {
+            "Start": (BASE_DT + step * index).astimezone(PRAGUE_TZ),
+            "End": (BASE_DT + step * (index + 1)).astimezone(PRAGUE_TZ),
+        }
+        for index in (0, 2, 4, 6)
+    ]
+
+    for index in range(8):
+        current_time = BASE_DT + step * index
+        with freeze_time(current_time):
+            async_fire_time_changed(hass, current_time)
+            await hass.async_block_till_done()
+        continuous = hass.states.get(continuous_id)
+        independent = hass.states.get(independent_id)
+        assert continuous is not None
+        assert independent is not None
+        assert continuous.state == ("on" if index < 4 else "off")
+        assert independent.state == ("on" if index in (0, 2, 4, 6) else "off")
+
+
+@pytest.mark.asyncio
 async def test_time_window_search_finds_cheapest_block_inside_window(
     hass: HomeAssistant,
     mock_ote_electricity: AsyncMock,
@@ -1091,10 +1386,12 @@ async def test_cross_midnight_time_window_search_can_be_active(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", list(SearchMode))
 async def test_tomorrow_search_is_plan_only_off_with_attributes(
     hass: HomeAssistant,
     mock_ote_electricity: AsyncMock,
     mock_cnb: AsyncMock,
+    mode: SearchMode,
 ):
     """Test tomorrow searches expose the plan while staying off today."""
     await hass.config.async_set_time_zone("Europe/Prague")
@@ -1104,6 +1401,7 @@ async def test_tomorrow_search_is_plan_only_off_with_attributes(
         "type": SearchType.TOMORROW,
         "length_hours": 3,
         CONF_PRICE_TYPE: "spot",
+        CONF_SEARCH_MODE: mode,
     }
 
     with freeze_time(BASE_DT):
@@ -1395,10 +1693,12 @@ async def test_quick_subentry_updates_serialize_platform_reload(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", list(SearchMode))
 async def test_custom_entity_lifecycle_is_stable_and_scoped_per_entry(
     hass: HomeAssistant,
     mock_ote_electricity: AsyncMock,
     mock_cnb: AsyncMock,
+    mode: SearchMode,
 ):
     """Test safe edits preserve identity and cleanup never crosses entry boundaries."""
     search = {
@@ -1430,11 +1730,16 @@ async def test_custom_entity_lifecycle_is_stable_and_scoped_per_entry(
     assert len(set(registry_entries)) == 2
 
     first_entity_id = registry_entries[0]
+    assert first_entity_id is not None
+    ent_reg.async_update_entity(first_entity_id, name="My water heater")
+    other_before = hass.states.get(cast(str, registry_entries[1]))
+    assert other_before is not None
     first_subentry = next(iter(entries[0].subentries.values()))
     edited = {
         **search,
         "name": "Renamed schedule",
         "length_hours": 2,
+        CONF_SEARCH_MODE: mode.value,
     }
     with freeze_time(BASE_DT):
         hass.config_entries.async_update_subentry(
@@ -1450,6 +1755,19 @@ async def test_custom_entity_lifecycle_is_stable_and_scoped_per_entry(
         ent_reg.async_get_entity_id("binary_sensor", DOMAIN, unique_ids[0])
         == first_entity_id
     )
+    retained = ent_reg.async_get(first_entity_id)
+    assert retained is not None
+    assert retained.name == "My water heater"
+    assert retained.config_subentry_id == first_subentry.subentry_id
+    assert len(entries[0].subentries) == 1
+    assert entries[0].runtime_data.config.cheapest_block_searches[0].mode == mode
+    changed = hass.states.get(first_entity_id)
+    assert changed is not None
+    assert ("Intervals" in changed.attributes) == (mode == SearchMode.INDEPENDENT)
+    other_after = hass.states.get(cast(str, registry_entries[1]))
+    assert other_after is not None
+    assert other_after.state == other_before.state
+    assert other_after.attributes == other_before.attributes
 
     with freeze_time(BASE_DT):
         assert hass.config_entries.async_remove_subentry(
@@ -1468,10 +1786,12 @@ async def test_custom_entity_lifecycle_is_stable_and_scoped_per_entry(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_ote_electricity", ["today"], indirect=True)
+@pytest.mark.parametrize("mode", list(SearchMode))
 async def test_searches_follow_template_and_tomorrow_data_availability(
     hass: HomeAssistant,
     mock_ote_electricity: AsyncMock,
     mock_cnb: AsyncMock,
+    mode: SearchMode,
 ):
     """Test template-backed searches recover while an unpublished plan stays unavailable."""
     await hass.config.async_set_time_zone("Europe/Prague")
@@ -1482,6 +1802,7 @@ async def test_searches_follow_template_and_tomorrow_data_availability(
             "type": SearchType.TODAY,
             "length_hours": 1,
             CONF_PRICE_TYPE: price_type,
+            CONF_SEARCH_MODE: mode,
         }
         for price_type in ("buy", "sell")
     ]
@@ -1492,6 +1813,7 @@ async def test_searches_follow_template_and_tomorrow_data_availability(
             "type": SearchType.TOMORROW,
             "length_hours": 1,
             CONF_PRICE_TYPE: "spot",
+            CONF_SEARCH_MODE: mode,
         }
     )
     entry = get_entry(

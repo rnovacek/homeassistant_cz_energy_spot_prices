@@ -29,13 +29,16 @@ from homeassistant.exceptions import TemplateError
 from .cheapest_blocks import (
     format_search_subentry_title,
     legacy_block_length,
+    search_mode_from_value,
     validate_search_definition,
 )
 from .const import (
     CONF_PRICE_TYPE,
+    CONF_SEARCH_MODE,
     CONF_SEARCH_OBJECTIVE,
     DOMAIN,
     PRICE_BLOCK_SUBENTRY_TYPE,
+    SearchMode,
     SearchObjective,
     SearchType,
     CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY,
@@ -433,6 +436,9 @@ class PriceBlockSubentryFlowHandler(ConfigSubentryFlow):
                 CONF_SEARCH_OBJECTIVE: _search_objective_from_value(
                     user_input.get(CONF_SEARCH_OBJECTIVE)
                 ).value,
+                CONF_SEARCH_MODE: search_mode_from_value(
+                    user_input.get(CONF_SEARCH_MODE)
+                ).value,
             }
             if (
                 subentry is not None
@@ -497,6 +503,14 @@ class PriceBlockSubentryFlowHandler(ConfigSubentryFlow):
                 )
             ),
             vol.Required(
+                CONF_SEARCH_MODE, default=defaults[CONF_SEARCH_MODE]
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[mode.value for mode in SearchMode],
+                    translation_key="search_mode",
+                )
+            ),
+            vol.Required(
                 "length_hours", default=defaults["length_hours"]
             ): NumberSelector(_length_selector_config(entry)),
         }
@@ -552,6 +566,7 @@ def _subentry_search_defaults(
         CONF_SEARCH_OBJECTIVE: _search_objective_from_value(
             source.get(CONF_SEARCH_OBJECTIVE)
         ).value,
+        CONF_SEARCH_MODE: search_mode_from_value(source.get(CONF_SEARCH_MODE)).value,
         "start_time": source.get("start_time", "20:00"),
         "end_time": source.get("end_time", "06:00"),
     }

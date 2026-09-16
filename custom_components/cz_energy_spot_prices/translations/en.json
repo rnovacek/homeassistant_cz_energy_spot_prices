@@ -26,6 +26,12 @@
                 "highest": "Highest price"
             }
         },
+        "search_mode": {
+            "options": {
+                "continuous": "Continuous block",
+                "independent": "Independent intervals"
+            }
+        },
         "price_type": {
             "options": {
                 "spot": "Spot",
@@ -85,7 +91,7 @@
     },
     "config_subentries": {
         "price_block": {
-            "entry_type": "Binary sensor active during the selected price block",
+            "entry_type": "Binary sensor active during the selected price block or intervals",
             "initiate_flow": {
                 "user": "Add price block search",
                 "reconfigure": "Reconfigure price block search"
@@ -93,7 +99,7 @@
             "step": {
                 "user": {
                     "title": "Add price block search",
-                    "description": "Creates a binary sensor that turns on during the lowest- or highest-priced continuous block. Choose whether to search today, tomorrow, or within a specific time window.",
+                    "description": "Creates a binary sensor that turns on during the lowest- or highest-priced continuous block or independent intervals. Choose whether to search today, tomorrow, or within a specific time window.",
                     "menu_options": {
                         "add_today": "Today",
                         "add_tomorrow": "Tomorrow",
@@ -102,19 +108,19 @@
                 },
                 "add_today": {
                     "title": "Add today search",
-                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "length_hours": "Duration"}
+                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "mode": "Selection mode", "length_hours": "Duration"}
                 },
                 "add_tomorrow": {
                     "title": "Add tomorrow search",
-                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "length_hours": "Duration"}
+                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "mode": "Selection mode", "length_hours": "Duration"}
                 },
                 "add_fixed": {
                     "title": "Add time window search",
-                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "length_hours": "Duration", "start_time": "Window starts", "end_time": "Window ends"}
+                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "mode": "Selection mode", "length_hours": "Duration", "start_time": "Window starts", "end_time": "Window ends"}
                 },
                 "reconfigure": {
                     "title": "Reconfigure price block search",
-                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "length_hours": "Duration", "type": "Search period", "start_time": "Window starts", "end_time": "Window ends"}
+                    "data": {"name": "Name", "price_type": "Price source", "objective": "Find", "mode": "Selection mode", "length_hours": "Duration", "type": "Search period", "start_time": "Window starts", "end_time": "Window ends"}
                 }
             },
             "error": {

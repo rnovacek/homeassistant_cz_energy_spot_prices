@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, cast
 
+import pytest
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     SOURCE_USER,
@@ -27,9 +28,11 @@ from custom_components.cz_energy_spot_prices.const import (
     CONF_ADDITIONAL_COSTS_BUY_ELECTRICITY,
     CONF_ADDITIONAL_COSTS_SELL_ELECTRICITY,
     CONF_PRICE_TYPE,
+    CONF_SEARCH_MODE,
     CONF_SEARCH_OBJECTIVE,
     DOMAIN,
     PRICE_BLOCK_SUBENTRY_TYPE,
+    SearchMode,
     SearchObjective,
     SearchType,
     SpotRateIntervalType,
@@ -209,6 +212,7 @@ async def test_subentry_flow_adds_tomorrow_search(hass: HomeAssistant):
         "name",
         CONF_PRICE_TYPE,
         CONF_SEARCH_OBJECTIVE,
+        CONF_SEARCH_MODE,
         "length_hours",
     ]
     result = await hass.config_entries.subentries.async_configure(
@@ -225,6 +229,102 @@ async def test_subentry_flow_adds_tomorrow_search(hass: HomeAssistant):
     assert subentry.title == "Tomorrow plan · Tomorrow · Lowest Spot · 2 h"
     assert subentry.unique_id
     assert subentry.data["type"] == SearchType.TOMORROW
+    assert subentry.data[CONF_SEARCH_MODE] == SearchMode.CONTINUOUS
+
+
+@pytest.mark.parametrize("search_type", list(SearchType))
+@pytest.mark.parametrize("interval", [SpotRateIntervalType.Hour, SpotRateIntervalType.QuarterHour])
+async def test_subentry_flow_adds_independent_search(
+    hass: HomeAssistant, search_type: SearchType, interval: SpotRateIntervalType
+) -> None:
+    entry = _entry(interval=interval)
+    entry.add_to_hass(hass)
+    result = await _start_add_flow(hass, entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"next_step_id": f"add_{search_type.value}"}
+    )
+    assert _selector_options(result, CONF_SEARCH_MODE) == ["continuous", "independent"]
+    mode_field = next(
+        field for field in result["data_schema"].schema if field.schema == CONF_SEARCH_MODE
+    )
+    assert mode_field.default() == SearchMode.CONTINUOUS
+    user_input = {
+        "name": "Water heater",
+        "length_hours": 1,
+        CONF_PRICE_TYPE: "spot",
+        CONF_SEARCH_OBJECTIVE: SearchObjective.LOWEST,
+        CONF_SEARCH_MODE: SearchMode.INDEPENDENT,
+    }
+    if search_type == SearchType.FIXED:
+        user_input.update({"start_time": "22:00", "end_time": "06:00"})
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], user_input
+    )
+
+    assert result["type"] == "create_entry"
+    subentry = next(iter(entry.subentries.values()))
+    assert subentry.data[CONF_SEARCH_MODE] == SearchMode.INDEPENDENT
+    assert subentry.data["type"] == search_type
+    assert subentry.title.endswith(" · Independent intervals")
+
+
+async def test_subentry_reconfigure_mode_preserves_identity(hass: HomeAssistant) -> None:
+    entry = _entry()
+    entry.add_to_hass(hass)
+    search = {
+        "id": "stable-mode-id",
+        "type": SearchType.TODAY,
+        "name": "Water heater",
+        "length_hours": 1.0,
+        CONF_PRICE_TYPE: "spot",
+        CONF_SEARCH_OBJECTIVE: SearchObjective.LOWEST,
+        "legacy": True,
+    }
+    subentry = _add_subentry(hass, entry, search)
+    previous_mode = SearchMode.CONTINUOUS
+    for mode in (SearchMode.INDEPENDENT, SearchMode.CONTINUOUS):
+        result = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, PRICE_BLOCK_SUBENTRY_TYPE),
+            context=SubentryFlowContext(
+                source=SOURCE_RECONFIGURE,
+                subentry_id=subentry.subentry_id,
+            ),
+        )
+        mode_field = next(
+            field for field in result["data_schema"].schema
+            if field.schema == CONF_SEARCH_MODE
+        )
+        assert mode_field.default() == previous_mode
+        user_input = {
+            "name": "Water heater",
+            "type": SearchType.TODAY,
+            "length_hours": 1.25,
+            CONF_PRICE_TYPE: "spot",
+            CONF_SEARCH_OBJECTIVE: SearchObjective.LOWEST,
+            CONF_SEARCH_MODE: mode,
+        }
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], user_input
+        )
+        assert result["type"] == "form"
+        assert result["errors"] == {"length_hours": "incompatible_interval"}
+        mode_field = next(
+            field for field in result["data_schema"].schema
+            if field.schema == CONF_SEARCH_MODE
+        )
+        assert mode_field.default() == mode
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {**user_input, "length_hours": 1.0}
+        )
+        assert result["type"] == "abort"
+        assert result["reason"] == "reconfigure_successful"
+        assert len(entry.subentries) == 1
+        updated = entry.subentries[subentry.subentry_id]
+        assert updated.unique_id == subentry.unique_id
+        assert updated.data == {**search, CONF_SEARCH_MODE: mode.value}
+        if mode == SearchMode.CONTINUOUS:
+            assert updated.title == subentry.title
+        previous_mode = mode
 
 
 async def test_subentry_fixed_search_validation(hass: HomeAssistant):
@@ -296,6 +396,7 @@ async def test_subentry_reconfigure_preserves_identity(hass: HomeAssistant):
     assert updated.data["type"] == SearchType.TODAY
     assert "start_time" not in updated.data
     assert updated.data["legacy"] is True
+    assert updated.data[CONF_SEARCH_MODE] == SearchMode.CONTINUOUS
 
 
 async def test_subentry_price_types_follow_parent_templates(hass: HomeAssistant):

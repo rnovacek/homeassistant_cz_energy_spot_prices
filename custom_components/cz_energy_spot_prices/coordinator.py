@@ -407,6 +407,7 @@ class IntervalSpotRateData:
                 search.objective,
                 interval_seconds=interval_seconds,
                 require_complete_window=True,
+                mode=search.mode,
             )
             if result is None:
                 _LOGGER.debug(
@@ -422,6 +423,7 @@ class IntervalSpotRateData:
                 start=result["start"],
                 end=result["end"],
                 prices=result["prices"],
+                intervals=result.get("intervals"),
             )
 
     def interval_for_dt(self, dt: datetime) -> SpotRateInterval:
@@ -587,6 +589,16 @@ class Window:
     start: datetime
     end: datetime
     prices: list[Decimal]
+    intervals: list[tuple[datetime, datetime]] | None = None
+
+    def contains(self, instant: datetime) -> bool:
+        """Check active time without treating gaps as selected intervals."""
+        if self.intervals is None:
+            return self.start <= instant < self.end
+        return any(
+            start_utc <= instant < end_utc
+            for start_utc, end_utc in self.intervals
+        )
 
 
 def find_cheapest_window(

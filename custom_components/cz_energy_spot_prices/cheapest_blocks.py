@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 from attr import dataclass
 
 from .const import (
+    CONF_SEARCH_MODE,
+    SearchMode,
     SearchObjective,
     PriceType,
     SearchType,
@@ -36,6 +38,7 @@ class PriceBlockSearch:
     end_time: time | None = None
     legacy: bool = False
     config_subentry_id: str | None = None
+    mode: SearchMode = SearchMode.CONTINUOUS
 
     @property
     def legacy_block_length(self) -> int | None:
@@ -99,7 +102,16 @@ class PriceBlockSearch:
             end_time=end,
             legacy=search.get("legacy") is True,
             config_subentry_id=search.get("config_subentry_id"),
+            mode=search_mode_from_value(search.get(CONF_SEARCH_MODE)),
         )
+
+
+def search_mode_from_value(value: Any) -> SearchMode:
+    """Keep missing or unrecognized modes compatible with released searches."""
+    try:
+        return SearchMode(value)
+    except (TypeError, ValueError):
+        return SearchMode.CONTINUOUS
 
 
 def legacy_block_searches(legacy: Any) -> list[dict[str, Any]]:
@@ -195,11 +207,14 @@ def format_search_subentry_title(search: dict[str, Any]) -> str:
         duration = f"{float(raw_duration):g} h"
     except (TypeError, ValueError):
         duration = "? h"
-    return f"{name} · {period} · {objective} {price_type} · {duration}"
+    title = f"{name} · {period} · {objective} {price_type} · {duration}"
+    if search_mode_from_value(search.get(CONF_SEARCH_MODE)) == SearchMode.INDEPENDENT:
+        return f"{title} · Independent intervals"
+    return title
 
 
 def compute_required_intervals(length_hours: float, interval_seconds: int) -> int:
-    """Return number of consecutive intervals needed for the given length."""
+    """Return the number of intervals needed for the given length."""
     required = length_hours * 3600 / interval_seconds
     rounded = round(required)
     if abs(required - rounded) > _INTERVAL_TOLERANCE:
@@ -396,11 +411,12 @@ def find_price_block(
     *,
     interval_seconds: int | None = None,
     require_complete_window: bool = False,
+    mode: SearchMode = SearchMode.CONTINUOUS,
 ) -> dict[str, Any] | None:
-    """Find the lowest- or highest-priced consecutive block inside the window.
+    """Find the best consecutive block or independent intervals in the window.
 
     intervals: list of (utc_dt, price) sorted by utc_dt
-    Returns dict with start, end, prices, total, average or None.
+    Returns start, end, prices, total, average and independent intervals, or None.
     """
     if not intervals:
         return None
@@ -433,8 +449,30 @@ def find_price_block(
         if window_start <= dt and dt + timedelta(seconds=interval_seconds) <= window_end
     ]
 
-    if len(filtered) < required:
+    if required <= 0 or len(filtered) < required:
         return None
+
+    if mode == SearchMode.INDEPENDENT:
+        ranked = sorted(
+            filtered,
+            key=lambda item: (
+                item[1] if objective == SearchObjective.LOWEST else -item[1],
+                item[0],
+            ),
+        )
+        selected = sorted(ranked[:required], key=lambda item: item[0])
+        prices = [price for _start, price in selected]
+        total = sum(prices, start=Decimal(0))
+        return {
+            "start": selected[0][0],
+            "end": selected[-1][0] + interval_delta,
+            "prices": prices,
+            "total": total,
+            "average": total / required,
+            "intervals": [
+                (start, start + interval_delta) for start, _price in selected
+            ],
+        }
 
     selected_sum: Decimal | None = None
     selected_start: datetime | None = None

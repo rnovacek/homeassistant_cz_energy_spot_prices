@@ -21,6 +21,7 @@ CONF_CHEAPEST_BLOCKS = "cheapest_blocks"
 CONF_ALLOW_CROSS_MIDNIGHT = "allow_cross_midnight"
 CONF_PRICE_TYPE = "price_type"
 CONF_SEARCH_OBJECTIVE = "objective"
+CONF_SEARCH_MODE = "mode"
 PRICE_BLOCK_SUBENTRY_TYPE = "price_block"
 CONF_CONFIG_SUBENTRY_ID = "config_subentry_id"
 
@@ -46,6 +47,11 @@ class SearchType(StrEnum):
 class SearchObjective(StrEnum):
     LOWEST = "lowest"
     HIGHEST = "highest"
+
+
+class SearchMode(StrEnum):
+    CONTINUOUS = "continuous"
+    INDEPENDENT = "independent"
 
 
 class PriceType(StrEnum):

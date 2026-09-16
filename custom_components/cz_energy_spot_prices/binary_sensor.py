@@ -341,7 +341,7 @@ class SearchBasedCheapestElectricitySensor(BinarySpotRateSensorBase):
         )
 
     @override
-    def update(self, rate_data: IntervalTradeRateData | None):
+    def update(self, rate_data: IntervalTradeRateData | None) -> None:
         self._attr = {}
 
         now = get_now()
@@ -364,7 +364,7 @@ class SearchBasedCheapestElectricitySensor(BinarySpotRateSensorBase):
             self._attr_available = False
             return
 
-        self._attr_is_on = window.start <= now < window.end
+        self._attr_is_on = window.contains(now)
         start = window.start.astimezone(self.coordinator.config.zoneinfo)
         end = window.end.astimezone(self.coordinator.config.zoneinfo)
         self._attr = {
@@ -378,6 +378,15 @@ class SearchBasedCheapestElectricitySensor(BinarySpotRateSensorBase):
             "Objective": self.objective.value,
             "Search type": self.search.type.value,
         }
+        if window.intervals is not None:
+            self._attr["Search mode"] = self.search.mode.value
+            self._attr["Intervals"] = [
+                {
+                    "Start": start_utc.astimezone(self.coordinator.config.zoneinfo),
+                    "End": end_utc.astimezone(self.coordinator.config.zoneinfo),
+                }
+                for start_utc, end_utc in window.intervals
+            ]
         if self.coordinator.config.interval == SpotRateIntervalType.Hour:
             # Doesn't make sense to have these on 15min intervals
             self._attr["Start hour"] = start.hour

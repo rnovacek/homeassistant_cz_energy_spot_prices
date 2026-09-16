@@ -26,6 +26,12 @@
                 "highest": "Najvyššia cena"
             }
         },
+        "search_mode": {
+            "options": {
+                "continuous": "Súvislý blok",
+                "independent": "Samostatné intervaly"
+            }
+        },
         "price_type": {
             "options": {
                 "spot": "Spotová",
@@ -85,7 +91,7 @@
     },
     "config_subentries": {
         "price_block": {
-            "entry_type": "Binárny senzor aktívny počas vybraného cenového bloku",
+            "entry_type": "Binárny senzor aktívny počas vybraného cenového bloku alebo intervalov",
             "initiate_flow": {
                 "user": "Pridať vyhľadávanie cenového bloku",
                 "reconfigure": "Upraviť vyhľadávanie cenového bloku"
@@ -93,13 +99,13 @@
             "step": {
                 "user": {
                     "title": "Pridať vyhľadávanie cenového bloku",
-                    "description": "Vytvorí binárny senzor, ktorý sa zapne počas súvislého bloku s najnižšou alebo najvyššou cenou. Vyberte vyhľadávanie pre dnešok, zajtrajšok alebo konkrétne časové okno.",
+                    "description": "Vytvorí binárny senzor, ktorý sa zapne počas súvislého bloku alebo samostatných intervalov s najnižšou alebo najvyššou cenou. Vyberte vyhľadávanie pre dnešok, zajtrajšok alebo konkrétne časové okno.",
                     "menu_options": {"add_today": "Dnes", "add_tomorrow": "Zajtra", "add_fixed": "Časové okno"}
                 },
-                "add_today": {"title": "Pridať dnešné vyhľadávanie", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie"}},
-                "add_tomorrow": {"title": "Pridať zajtrajšie vyhľadávanie", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie"}},
-                "add_fixed": {"title": "Pridať vyhľadávanie v časovom okne", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie", "start_time": "Začiatok okna", "end_time": "Koniec okna"}},
-                "reconfigure": {"title": "Upraviť vyhľadávanie cenového bloku", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "length_hours": "Trvanie", "type": "Obdobie vyhľadávania", "start_time": "Začiatok okna", "end_time": "Koniec okna"}}
+                "add_today": {"title": "Pridať dnešné vyhľadávanie", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "mode": "Režim výberu", "length_hours": "Trvanie"}},
+                "add_tomorrow": {"title": "Pridať zajtrajšie vyhľadávanie", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "mode": "Režim výberu", "length_hours": "Trvanie"}},
+                "add_fixed": {"title": "Pridať vyhľadávanie v časovom okne", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "mode": "Režim výberu", "length_hours": "Trvanie", "start_time": "Začiatok okna", "end_time": "Koniec okna"}},
+                "reconfigure": {"title": "Upraviť vyhľadávanie cenového bloku", "data": {"name": "Názov", "price_type": "Zdroj ceny", "objective": "Nájsť", "mode": "Režim výberu", "length_hours": "Trvanie", "type": "Obdobie vyhľadávania", "start_time": "Začiatok okna", "end_time": "Koniec okna"}}
             },
             "error": {
                 "required": "Povinné",
