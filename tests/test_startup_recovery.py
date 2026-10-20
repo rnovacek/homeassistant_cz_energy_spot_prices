@@ -28,9 +28,15 @@ from custom_components.cz_energy_spot_prices.spot_rate import OTEFault, SpotRate
 
 from . import BASE_DT, get_entry
 
+EMPTY_OTE_RESPONSE = (
+    '<Envelope xmlns="http://schemas.xmlsoap.org/soap/envelope/">'
+    '<Body /></Envelope>'
+)
+
 
 @pytest.mark.parametrize("commodity", (Commodity.Electricity, Commodity.Gas))
 @pytest.mark.parametrize("persisted", (True, False), ids=("persisted", "no-store"))
+@pytest.mark.parametrize("failure", ("exception", "empty"))
 async def test_startup_ote_failure_still_fetches_next_day(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
@@ -38,6 +44,7 @@ async def test_startup_ote_failure_still_fetches_next_day(
     request: pytest.FixtureRequest,
     commodity: Commodity,
     persisted: bool,
+    failure: str,
 ) -> None:
     """A real startup retry must recover and keep the next publication timer."""
     await hass.config.async_set_time_zone("Europe/Prague")
@@ -65,7 +72,10 @@ async def test_startup_ote_failure_still_fetches_next_day(
         }
 
     mock_ote.reset_mock()
-    mock_ote.side_effect = OTEFault("OTE unavailable during startup")
+    if failure == "exception":
+        mock_ote.side_effect = OTEFault("OTE unavailable during startup")
+    else:
+        mock_ote.return_value = EMPTY_OTE_RESPONSE
     entry = get_entry(commodity=commodity.value, unit="kWh", interval=interval)
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
@@ -74,6 +84,7 @@ async def test_startup_ote_failure_still_fetches_next_day(
     assert coordinator.data == (rates if persisted else None)
 
     mock_ote.side_effect = None
+    mock_ote.return_value = xml
     for _ in range(60):
         freezer.tick(timedelta(seconds=1))
         async_fire_time_changed(hass)
@@ -138,4 +149,49 @@ async def test_startup_cnb_failure_still_refreshes_at_midnight(
     assert mock_cnb.await_count == calls_before_midnight + 1
     assert coordinator.last_update_success
     assert entry.runtime_data.data is not None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+@pytest.mark.parametrize("failure", ("exception", "empty"))
+@pytest.mark.parametrize(
+    "interval", (SpotRateIntervalType.Hour, SpotRateIntervalType.QuarterHour)
+)
+async def test_restart_ote_outage_preserves_cached_sensors(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    mock_ote_electricity: AsyncMock,
+    failure: str,
+    interval: SpotRateIntervalType,
+) -> None:
+    """Restored prices stay usable and are not overwritten by an empty response."""
+    await hass.config.async_set_time_zone("Europe/Prague")
+    freezer.move_to(BASE_DT + timedelta(hours=10))
+    entry = get_entry(interval=interval)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    sensor_id = (
+        "sensor.current_buy_electricity_"
+        + ("hour" if interval == SpotRateIntervalType.Hour else "15min")
+        + "_order"
+    )
+    before = hass.states.get(sensor_id)
+    assert before is not None
+    assert before.state not in ("unknown", "unavailable")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+    store_key = f"{DOMAIN}.spot_rates.electricity"
+    cached_rates = hass_storage[store_key]["data"]
+    if failure == "exception":
+        mock_ote_electricity.side_effect = OTEFault("OTE unavailable")
+    else:
+        mock_ote_electricity.return_value = EMPTY_OTE_RESPONSE
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    after = hass.states.get(sensor_id)
+    assert after is not None
+    assert after.state == before.state
+    assert hass_storage[store_key]["data"] == cached_rates
     assert await hass.config_entries.async_unload(entry.entry_id)

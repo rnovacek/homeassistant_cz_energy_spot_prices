@@ -818,6 +818,11 @@ class SpotRateCoordinator(DataUpdateCoordinator[RatesByInterval | None]):
         else:
             raise ValueError(f"Invalid commodity {self._commodity}")
 
+        # OTE can return valid XML without prices during an outage. Treat it
+        # as a failed fetch so it cannot overwrite working memory or disk data.
+        if not any(rates.values()):
+            raise OTEFault("OTE response contains no spot prices")
+
         return rates
 
     async def _fetch_data_with_retry(self):
