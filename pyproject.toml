@@ -12,7 +12,7 @@ dev = [
     "homeassistant>=2026.5.2",
     "pillow>=11.3.0",
     "pytest==9.0.3",
-    "pytest-asyncio==1.3.0",
+    "pytest-asyncio==1.4.0",
     "pytest-homeassistant-custom-component>=0.13.331",
     # Runtime dependency declared in custom_components/.../manifest.json.
     # Listed here so that the test environment (which does not install manifest
@@ -21,8 +21,8 @@ dev = [
     "aioesphomeapi>=45.0.2",
     "hassil>=3.5.0",
     "pysnmp>=7.1.27",
-    "pymicro-vad==1.0.1",
-    "pyspeex-noise==1.0.2",
+    "pymicro-vad==2.1.0",
+    "pyspeex-noise==2.0.1",
     "home-assistant-intents>=2026.5.5",
     "pyrefly>=1.0.0",
     "pyturbojpeg>=2.2.0",
