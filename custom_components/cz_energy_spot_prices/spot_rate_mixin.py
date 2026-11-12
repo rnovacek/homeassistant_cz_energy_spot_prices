@@ -78,6 +78,21 @@ class SpotRateSensorMixin(CoordinatorEntity[EntryCoordinator]):
         raise NotImplementedError()
 
     @property
+    @override
+    def available(self) -> bool:
+        """A successful coordinator update can still lack one trade's prices."""
+        if not super().available:
+            return False
+        rate_data = self.coordinator.data
+        if rate_data is None:
+            return True
+        if self._trade == Trade.BUY and self.coordinator.buy_template is not None:
+            return rate_data.buy_rates is not None
+        if self._trade == Trade.SELL and self.coordinator.sell_template is not None:
+            return rate_data.sell_rates is not None
+        return True
+
+    @property
     def native_value(self):
         """Return the native value of the sensor."""
         return self._value

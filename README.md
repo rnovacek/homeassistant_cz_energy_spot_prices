@@ -56,6 +56,10 @@ Variables for **gas** templates (gas has only daily prices):
 
 If you do not enter a template, the corresponding buy/sell sensors are not created.
 
+Templates must return a finite number for every supplied price interval, including yesterday and tomorrow. Zero and negative prices are valid. If a template fails or returns an invalid value (such as `none`, text, `NaN`, or infinity), all price, order, and price-block sensors using that template become `unavailable`. Spot sensors and sensors using the other template continue updating. Affected sensors recover automatically when the template succeeds again.
+
+The Home Assistant log identifies the commodity, buy/sell template, interval timestamp in UTC, input price, returned value or render error, and template text. Check the template in the integration options and the availability and date coverage of its input entities. A missing price is not replaced with zero.
+
 ### Example templates
 
 Use `as_local(hour)` for electricity tariff hours (including quarter-hour prices), or `as_local(day)` for gas delivery dates. `now()` and `utcnow()` return the time the template runs, not the delivery time: choosing VT/NT with `now().hour` applies the current tariff to every interval. When saving a template that calls either function, the integration warns you and lets you edit it or save anyway if intentional.
