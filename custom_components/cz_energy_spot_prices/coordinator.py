@@ -13,6 +13,7 @@ from asyncio import timeout
 from attr import dataclass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import TemplateError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.template import Template
@@ -176,6 +177,38 @@ class SpotRateDay:
         return min_interval
 
 
+class PriceTemplateError(ValueError):
+    """A price template failed to produce a finite number for an interval."""
+
+
+def _render_price_template(
+    rate_template: Template, price: Decimal, interval_start_utc: datetime
+) -> Decimal:
+    """Keep the existing float template boundary, validating its result."""
+    result = None
+    try:
+        result = rate_template.async_render(
+            {
+                "value": float(price),
+                "hour": interval_start_utc,
+                # Gas documents ``day``; ``hour`` remains available for compatibility.
+                "day": interval_start_utc,
+            }
+        )
+        if isinstance(result, bool) or not isinstance(result, (str, int, float, Decimal)):
+            raise ValueError("expected a finite number")
+        rendered_price = Decimal(result)
+        if not rendered_price.is_finite():
+            raise ValueError("expected a finite number")
+        return rendered_price
+    except (TemplateError, ArithmeticError, TypeError, ValueError) as error:
+        raise PriceTemplateError(
+            f"interval {interval_start_utc.isoformat()}, value={float(price)!r}, "
+            f"result={result!r} ({type(result).__name__}): {error}; "
+            f"template: {rate_template.template}"
+        ) from error
+
+
 @final
 class IntervalSpotRateData:
     def __init__(
@@ -201,22 +234,7 @@ class IntervalSpotRateData:
         # Create individual SpotRateInterval instances and compute statistics while doing that
         for utc_hour, rate in rates.items():
             if rate_template is not None:
-                rate = Decimal(
-                    cast(
-                        float,
-                        rate_template.async_render(
-                            {
-                                "value": float(rate),
-                                "hour": utc_hour,
-                                # Gas templates document this timestamp as
-                                # ``day``. Keep ``hour`` available as well for
-                                # backwards compatibility with existing
-                                # templates and the shared interval model.
-                                "day": utc_hour,
-                            }
-                        ),
-                    )
-                )
+                rate = _render_price_template(rate_template, rate, utc_hour)
             rate_hour = SpotRateInterval(
                 utc_hour, utc_hour.astimezone(config.zoneinfo), rate
             )
@@ -482,23 +500,45 @@ class IntervalTradeRateData:
             rate_template=None,
         )
 
-        if config.buy_template is None:
-            self.buy_rates = None
-        else:
-            self.buy_rates = IntervalSpotRateData(
-                config=config,
-                rates=converted_spot_rates,
-                rate_template=config.buy_template,
-            )
+        self.buy_rates = self._template_rates(
+            config, converted_spot_rates, config.buy_template, "buy"
+        )
+        self.sell_rates = self._template_rates(
+            config, converted_spot_rates, config.sell_template, "sell"
+        )
 
-        if config.sell_template is None:
-            self.sell_rates = None
-        else:
-            self.sell_rates = IntervalSpotRateData(
+    @staticmethod
+    def _template_rates(
+        config: EntryConfig,
+        rates: RateByDatetime,
+        rate_template: Template | None,
+        trade: str,
+    ) -> IntervalSpotRateData | None:
+        if rate_template is None:
+            return None
+        try:
+            return IntervalSpotRateData(
                 config=config,
-                rates=converted_spot_rates,
-                rate_template=config.sell_template,
+                rates=rates,
+                rate_template=rate_template,
             )
+        except PriceTemplateError as error:
+            # Partial prices would produce misleading statistics and search windows.
+            # Publish the other trades so a template failure cannot freeze spot data.
+            _LOGGER.error(
+                "Invalid %s %s price template (%s, %s/%s): %s. "
+                "%s sensors are unavailable until the template returns finite numbers "
+                "for every supplied interval, including yesterday and tomorrow. "
+                "Check the template in the integration options and its input entities.",
+                config.commodity,
+                trade,
+                config.interval,
+                config.currency,
+                config.unit,
+                error,
+                trade.capitalize(),
+            )
+            return None
 
 
 @final
